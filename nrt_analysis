@@ -1,0 +1,119 @@
+libname odbclib odbc noprompt="dsn=sas_read_only;Trusted_connection=yes" schema=public;
+libname desc "D:\Sas\Taiwo";
+
+proc contents data=odbclib.member; run;
+
+/*To see the submitter categories*/
+proc freq data=odbclib.member;
+table me001_cat;run;
+
+
+/*Pull data*/
+
+proc sql;
+create table mcd_data (compress=yes) as
+select* from odbclib.member
+where me001_cat in ('MCD');
+quit;
+
+proc sql;
+create table mcd_data2 (compress=yes) as
+select*, 
+case when  me162a<= '01Jan14'd and me163a>= '01Jan14'd then 1 else 0 end as Jan14,
+case when  me162a<= '01Feb14'd and me163a>= '01Feb14'd then 1 else 0 end as Feb14,
+case when  me162a<= '01Mar14'd and me163a>= '01Mar14'd then 1 else 0 end as Mar14,
+case when  me162a<= '01Apr14'd and me163a>= '01Apr14'd then 1 else 0 end as Apr14,
+case when  me162a<= '01May14'd and me163a>= '01May14'd then 1 else 0 end as May14,
+case when  me162a<= '01Jun14'd and me163a>= '01Jun14'd then 1 else 0 end as Jun14,
+case when  me162a<= '01Jul14'd and me163a>= '01Jul14'd then 1 else 0 end as Jul14,
+case when  me162a<= '01Aug14'd and me163a>= '01Aug14'd then 1 else 0 end as Aug14,
+case when  me162a<= '01Sep14'd and me163a>= '01Sep14'd then 1 else 0 end as Sep14,
+case when  me162a<= '01Oct14'd and me163a>= '01Oct14'd then 1 else 0 end as Oct14,
+case when  me162a<= '01Nov14'd and me163a>= '01Nov14'd then 1 else 0 end as Nov14,
+case when  me162a<= '01Dec14'd and me163a>= '01Dec14'd then 1 else 0 end as Dec14,
+case when  me162a<= '01Jan15'd and me163a>= '01Jan15'd then 1 else 0 end as Jan15,
+case when  me162a<= '01Feb15'd and me163a>= '01Feb15'd then 1 else 0 end as Feb15,
+case when  me162a<= '01Mar15'd and me163a>= '01Mar15'd then 1 else 0 end as Mar15,
+case when  me162a<= '01Apr15'd and me163a>= '01Apr15'd then 1 else 0 end as Apr15,
+case when  me162a<= '01May15'd and me163a>= '01May15'd then 1 else 0 end as May15,
+case when  me162a<= '01Jun15'd and me163a>= '01Jun15'd then 1 else 0 end as Jun15,
+case when  me162a<= '01Jul15'd and me163a>= '01Jul15'd then 1 else 0 end as Jul15,
+case when  me162a<= '01Aug15'd and me163a>= '01Aug15'd then 1 else 0 end as Aug15,
+case when  me162a<= '01Sep15'd and me163a>= '01Sep15'd then 1 else 0 end as Sep15,
+case when  me162a<= '01Oct15'd and me163a>= '01Oct15'd then 1 else 0 end as Oct15,
+case when  me162a<= '01Nov15'd and me163a>= '01Nov15'd then 1 else 0 end as Nov15,
+case when  me162a<= '01Dec15'd and me163a>= '01Dec15'd then 1 else 0 end as Dec15,
+case when  me162a<= '01Jan16'd and me163a>= '01Jan16'd then 1 else 0 end as Jan16,
+case when  me162a<= '01Feb16'd and me163a>= '01Feb16'd then 1 else 0 end as Feb16,
+case when  me162a<= '01Mar16'd and me163a>= '01Mar16'd then 1 else 0 end as Mar16,
+case when  me162a<= '01Apr16'd and me163a>= '01Apr16'd then 1 else 0 end as Apr16,
+case when  me162a<= '01May16'd and me163a>= '01May16'd then 1 else 0 end as May16,
+case when  me162a<= '01Jun16'd and me163a>= '01Jun16'd then 1 else 0 end as Jun16,
+case when  me162a<= '01Jul16'd and me163a>= '01Jul16'd then 1 else 0 end as Jul16,
+case when  me162a<= '01Aug16'd and me163a>= '01Aug16'd then 1 else 0 end as Aug16,
+case when  me162a<= '01Sep16'd and me163a>= '01Sep16'd then 1 else 0 end as Sep16,
+case when  me162a<= '01Oct16'd and me163a>= '01Oct16'd then 1 else 0 end as Oct16,
+case when  me162a<= '01Nov16'd and me163a>= '01Nov16'd then 1 else 0 end as Nov16,
+case when  me162a<= '01Dec16'd and me163a>= '01Dec16'd then 1 else 0 end as Dec16,
+case when  me162a<= '01Jan17'd and me163a>= '01Jan17'd then 1 else 0 end as Jan17,
+case when  me162a<= '01Feb17'd and me163a>= '01Feb17'd then 1 else 0 end as Feb17,
+case when  me162a<= '01Mar17'd and me163a>= '01Mar17'd then 1 else 0 end as Mar17,
+case when  me162a<= '01Apr17'd and me163a>= '01Apr17'd then 1 else 0 end as Apr17,
+case when  me162a<= '01May17'd and me163a>= '01May17'd then 1 else 0 end as May17,
+case when  me162a<= '01Jun17'd and me163a>= '01Jun17'd then 1 else 0 end as Jun17,
+case when  me162a<= '01Jul17'd and me163a>= '01Jul17'd then 1 else 0 end as Jul17,
+case when  me162a<= '01Aug17'd and me163a>= '01Aug17'd then 1 else 0 end as Aug17,
+case when  me162a<= '01Sep17'd and me163a>= '01Sep17'd then 1 else 0 end as Sep17,
+case when  me162a<= '01Oct17'd and me163a>= '01Oct17'd then 1 else 0 end as Oct17,
+case when  me162a<= '01Nov17'd and me163a>= '01Nov17'd then 1 else 0 end as Nov17,
+case when  me162a<= '01Dec17'd and me163a>= '01Dec17'd then 1 else 0 end as Dec17,
+case when  me162a<= '01Jan18'd and me163a>= '01Jan18'd then 1 else 0 end as Jan18,
+case when  me162a<= '01Feb18'd and me163a>= '01Feb18'd then 1 else 0 end as Feb18,
+case when  me162a<= '01Mar18'd and me163a>= '01Mar18'd then 1 else 0 end as Mar18,
+case when  me162a<= '01Apr18'd and me163a>= '01Apr18'd then 1 else 0 end as Apr18,
+case when  me162a<= '01May18'd and me163a>= '01May18'd then 1 else 0 end as May18,
+case when  me162a<= '01Jun18'd and me163a>= '01Jun18'd then 1 else 0 end as Jun18
+from mcd_data;
+quit;
+
+/*Calculate age of subjects as of each study year*/
+proc sql;
+create table mcd_data3 as
+select*, (2014-me014_year) as age14,(2015-me014_year) as age15,(2016-me014_year) as age16,
+(2017-me014_year) as age17, (2018-me014_year) as age18
+from mcd_data2;
+quit;
+
+proc sql;
+create table mcd_data2014 as
+select*
+from mcd_data3
+where 18<=age14<=64;
+create table mcd_data2015 as
+select*
+from mcd_data3
+where 18<=age15<=64;
+create table mcd_data2016 as
+select*
+from mcd_data3
+where 18<=age16<=64;
+create table mcd_data2017 as
+select*
+from mcd_data3
+where 18<=age17<=64;
+create table mcd_data2018 as
+select*
+from mcd_data3
+where 18<=age18<=64;
+quit;
+
+proc freq data=mcd_data2014;
+table me019; run;
+proc freq data=mcd_data2015;
+table me019; run;
+proc freq data=mcd_data2016;
+table me019; run;
+proc freq data=mcd_data2017;
+table me019; run;
+proc freq data=mcd_data2018;
+table me019; run;
