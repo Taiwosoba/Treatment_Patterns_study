@@ -1,119 +1,1736 @@
+/**************************************************************************************************************************************************************************************
+LIBRARIES
+****************************************************************************************************************************************************************************************/
+
 libname odbclib odbc noprompt="dsn=sas_read_only;Trusted_connection=yes" schema=public;
-libname desc "D:\Sas\Taiwo";
+libname desc "D:\Sas\MKandTA";
 
-proc contents data=odbclib.member; run;
+/*************************************************************************
+SLEECTION OF MEDICAID ENROLEES
 
-/*To see the submitter categories*/
-proc freq data=odbclib.member;
-table me001_cat;run;
+We identified enrolles in traditional medicaid and medicaid expansion
+**************************************************************************/
+
+data initial_dataset;
+	set odbclib.member;
+	medicaidoriginal=0;
+	if ( me001="99MCD1" and me063="A") then medicaidoriginal=1;
+	medicaidexpansion=0;
+	if substr(me992,15,2) in ("32", "36") then medicaidexpansion=1;
+run;
+
+data desc.mcd_data;
+	set initial_dataset;
+	unic_member=cat(me998,me013); /*Added Nov. 04*/
+	where medicaidoriginal=1 or medicaidexpansion=1; /*to select only medicaid or medicaid expansion subjects*/
+run;
 
 
-/*Pull data*/
+proc sort data=desc.mcd_data out= desc.mcd_sort_uni nodupkey; /*Enrolment file without duplication of me107 used later for counting NRT dispensed*/
+	by me107;
+run;
+
+/*****Verify the number of medicaid expansion claims(1486352)***/
+/*data mcd_data_td;
+	set mcd_data;
+	where medicaidexpansion=1; 
+run;*/
+
+
+/*Sort study data by id, start date and end date*/
+/*proc sort data=mcd_data out= mcd_sort; 
+	by me001 me107 me162a me163a; 
+run;*/
+
+/*******************************************************************************************************
+Count number of insurance segments (epsd)
+**********************************************************************************************************/
+/*data mcd_seg (compress=yes); 
+	set mcd_sort;
+		by me001 me107;
+		retain max_finish;
+			if first.me107 then max_finish=me163a;
+			if first.me107 then epsd=1;
+			if not first.me107 
+			then do;
+			if me162a - max_finish > 1 
+			then epsd+1;
+			end;
+max_finish=max(max_finish, me163a);
+format max_finish date9.;
+run;*/
+
+/********Flag the earliest start date and latest end date for each enrolee*******/
+/*proc sql;
+	create table mcd_dates as
+	select *, min(me162a) as enrol_start_dt format date9., max(me163a) as enrol_end_dt format date9.
+	from mcd_seg
+	group by me001, me107, epsd
+	order by me998, me001, me107;
+quit;*/
+
+/*******************Remove duplicates************************************/
+/*proc sort nodupkey data=mcd_dates out=desc.mcd_final;
+	by me001 me107 epsd;
+run;*/
+
+/*************************************************************************************************************************************************************************
+Disaggregate dataset by year
+**********************************************************************************************************************************************************************/
 
 proc sql;
-create table mcd_data (compress=yes) as
-select* from odbclib.member
-where me001_cat in ('MCD');
+	create table mcd_data2014 (compress=yes) as
+	select*, (2014-me014_year) as age14,
+	case when  me162a<= '31Jan14'd and me163a>= '01Jan14'd then 1 else 0 end as Jan14,
+	case when  me162a<= '28Feb14'd and me163a>= '01Feb14'd then 1 else 0 end as Feb14,
+	case when  me162a<= '31Mar14'd and me163a>= '01Mar14'd then 1 else 0 end as Mar14,
+	case when  me162a<= '30Apr14'd and me163a>= '01Apr14'd then 1 else 0 end as Apr14,
+	case when  me162a<= '31May14'd and me163a>= '01May14'd then 1 else 0 end as May14,
+	case when  me162a<= '30Jun14'd and me163a>= '01Jun14'd then 1 else 0 end as Jun14,
+	case when  me162a<= '31Jul14'd and me163a>= '01Jul14'd then 1 else 0 end as Jul14,
+	case when  me162a<= '31Aug14'd and me163a>= '01Aug14'd then 1 else 0 end as Aug14,
+	case when  me162a<= '30Sep14'd and me163a>= '01Sep14'd then 1 else 0 end as Sep14,
+	case when  me162a<= '31Oct14'd and me163a>= '01Oct14'd then 1 else 0 end as Oct14,
+	case when  me162a<= '30Nov14'd and me163a>= '01Nov14'd then 1 else 0 end as Nov14,
+	case when  me162a<= '31Dec14'd and me163a>= '01Dec14'd then 1 else 0 end as Dec14
+	from desc.mcd_final;
 quit;
 
 proc sql;
-create table mcd_data2 (compress=yes) as
-select*, 
-case when  me162a<= '01Jan14'd and me163a>= '01Jan14'd then 1 else 0 end as Jan14,
-case when  me162a<= '01Feb14'd and me163a>= '01Feb14'd then 1 else 0 end as Feb14,
-case when  me162a<= '01Mar14'd and me163a>= '01Mar14'd then 1 else 0 end as Mar14,
-case when  me162a<= '01Apr14'd and me163a>= '01Apr14'd then 1 else 0 end as Apr14,
-case when  me162a<= '01May14'd and me163a>= '01May14'd then 1 else 0 end as May14,
-case when  me162a<= '01Jun14'd and me163a>= '01Jun14'd then 1 else 0 end as Jun14,
-case when  me162a<= '01Jul14'd and me163a>= '01Jul14'd then 1 else 0 end as Jul14,
-case when  me162a<= '01Aug14'd and me163a>= '01Aug14'd then 1 else 0 end as Aug14,
-case when  me162a<= '01Sep14'd and me163a>= '01Sep14'd then 1 else 0 end as Sep14,
-case when  me162a<= '01Oct14'd and me163a>= '01Oct14'd then 1 else 0 end as Oct14,
-case when  me162a<= '01Nov14'd and me163a>= '01Nov14'd then 1 else 0 end as Nov14,
-case when  me162a<= '01Dec14'd and me163a>= '01Dec14'd then 1 else 0 end as Dec14,
-case when  me162a<= '01Jan15'd and me163a>= '01Jan15'd then 1 else 0 end as Jan15,
-case when  me162a<= '01Feb15'd and me163a>= '01Feb15'd then 1 else 0 end as Feb15,
-case when  me162a<= '01Mar15'd and me163a>= '01Mar15'd then 1 else 0 end as Mar15,
-case when  me162a<= '01Apr15'd and me163a>= '01Apr15'd then 1 else 0 end as Apr15,
-case when  me162a<= '01May15'd and me163a>= '01May15'd then 1 else 0 end as May15,
-case when  me162a<= '01Jun15'd and me163a>= '01Jun15'd then 1 else 0 end as Jun15,
-case when  me162a<= '01Jul15'd and me163a>= '01Jul15'd then 1 else 0 end as Jul15,
-case when  me162a<= '01Aug15'd and me163a>= '01Aug15'd then 1 else 0 end as Aug15,
-case when  me162a<= '01Sep15'd and me163a>= '01Sep15'd then 1 else 0 end as Sep15,
-case when  me162a<= '01Oct15'd and me163a>= '01Oct15'd then 1 else 0 end as Oct15,
-case when  me162a<= '01Nov15'd and me163a>= '01Nov15'd then 1 else 0 end as Nov15,
-case when  me162a<= '01Dec15'd and me163a>= '01Dec15'd then 1 else 0 end as Dec15,
-case when  me162a<= '01Jan16'd and me163a>= '01Jan16'd then 1 else 0 end as Jan16,
-case when  me162a<= '01Feb16'd and me163a>= '01Feb16'd then 1 else 0 end as Feb16,
-case when  me162a<= '01Mar16'd and me163a>= '01Mar16'd then 1 else 0 end as Mar16,
-case when  me162a<= '01Apr16'd and me163a>= '01Apr16'd then 1 else 0 end as Apr16,
-case when  me162a<= '01May16'd and me163a>= '01May16'd then 1 else 0 end as May16,
-case when  me162a<= '01Jun16'd and me163a>= '01Jun16'd then 1 else 0 end as Jun16,
-case when  me162a<= '01Jul16'd and me163a>= '01Jul16'd then 1 else 0 end as Jul16,
-case when  me162a<= '01Aug16'd and me163a>= '01Aug16'd then 1 else 0 end as Aug16,
-case when  me162a<= '01Sep16'd and me163a>= '01Sep16'd then 1 else 0 end as Sep16,
-case when  me162a<= '01Oct16'd and me163a>= '01Oct16'd then 1 else 0 end as Oct16,
-case when  me162a<= '01Nov16'd and me163a>= '01Nov16'd then 1 else 0 end as Nov16,
-case when  me162a<= '01Dec16'd and me163a>= '01Dec16'd then 1 else 0 end as Dec16,
-case when  me162a<= '01Jan17'd and me163a>= '01Jan17'd then 1 else 0 end as Jan17,
-case when  me162a<= '01Feb17'd and me163a>= '01Feb17'd then 1 else 0 end as Feb17,
-case when  me162a<= '01Mar17'd and me163a>= '01Mar17'd then 1 else 0 end as Mar17,
-case when  me162a<= '01Apr17'd and me163a>= '01Apr17'd then 1 else 0 end as Apr17,
-case when  me162a<= '01May17'd and me163a>= '01May17'd then 1 else 0 end as May17,
-case when  me162a<= '01Jun17'd and me163a>= '01Jun17'd then 1 else 0 end as Jun17,
-case when  me162a<= '01Jul17'd and me163a>= '01Jul17'd then 1 else 0 end as Jul17,
-case when  me162a<= '01Aug17'd and me163a>= '01Aug17'd then 1 else 0 end as Aug17,
-case when  me162a<= '01Sep17'd and me163a>= '01Sep17'd then 1 else 0 end as Sep17,
-case when  me162a<= '01Oct17'd and me163a>= '01Oct17'd then 1 else 0 end as Oct17,
-case when  me162a<= '01Nov17'd and me163a>= '01Nov17'd then 1 else 0 end as Nov17,
-case when  me162a<= '01Dec17'd and me163a>= '01Dec17'd then 1 else 0 end as Dec17,
-case when  me162a<= '01Jan18'd and me163a>= '01Jan18'd then 1 else 0 end as Jan18,
-case when  me162a<= '01Feb18'd and me163a>= '01Feb18'd then 1 else 0 end as Feb18,
-case when  me162a<= '01Mar18'd and me163a>= '01Mar18'd then 1 else 0 end as Mar18,
-case when  me162a<= '01Apr18'd and me163a>= '01Apr18'd then 1 else 0 end as Apr18,
-case when  me162a<= '01May18'd and me163a>= '01May18'd then 1 else 0 end as May18,
-case when  me162a<= '01Jun18'd and me163a>= '01Jun18'd then 1 else 0 end as Jun18
-from mcd_data;
-quit;
-
-/*Calculate age of subjects as of each study year*/
-proc sql;
-create table mcd_data3 as
-select*, (2014-me014_year) as age14,(2015-me014_year) as age15,(2016-me014_year) as age16,
-(2017-me014_year) as age17, (2018-me014_year) as age18
-from mcd_data2;
+create table mcd_data2015 (compress=yes) as
+select*, (2015-me014_year) as age15,
+case when  me162a<= '31Jan15'd and me163a>= '01Jan15'd then 1 else 0 end as Jan15,
+case when  me162a<= '28Feb15'd and me163a>= '01Feb15'd then 1 else 0 end as Feb15,
+case when  me162a<= '31Mar15'd and me163a>= '01Mar15'd then 1 else 0 end as Mar15,
+case when  me162a<= '30Apr15'd and me163a>= '01Apr15'd then 1 else 0 end as Apr15,
+case when  me162a<= '31May15'd and me163a>= '01May15'd then 1 else 0 end as May15,
+case when  me162a<= '30Jun15'd and me163a>= '01Jun15'd then 1 else 0 end as Jun15,
+case when  me162a<= '31Jul15'd and me163a>= '01Jul15'd then 1 else 0 end as Jul15,
+case when  me162a<= '31Aug15'd and me163a>= '01Aug15'd then 1 else 0 end as Aug15,
+case when  me162a<= '30Sep15'd and me163a>= '01Sep15'd then 1 else 0 end as Sep15,
+case when  me162a<= '31Oct15'd and me163a>= '01Oct15'd then 1 else 0 end as Oct15,
+case when  me162a<= '30Nov15'd and me163a>= '01Nov15'd then 1 else 0 end as Nov15,
+case when  me162a<= '31Dec15'd and me163a>= '01Dec15'd then 1 else 0 end as Dec15
+from desc.mcd_final;
 quit;
 
 proc sql;
-create table mcd_data2014 as
+create table mcd_data2016 (compress=yes) as
+select*, (2016-me014_year) as age16,
+case when  me162a<= '31Jan16'd and me163a>= '01Jan16'd then 1 else 0 end as Jan16,
+case when  me162a<= '29Feb16'd and me163a>= '01Feb16'd then 1 else 0 end as Feb16,
+case when  me162a<= '31Mar16'd and me163a>= '01Mar16'd then 1 else 0 end as Mar16,
+case when  me162a<= '30Apr16'd and me163a>= '01Apr16'd then 1 else 0 end as Apr16,
+case when  me162a<= '31May16'd and me163a>= '01May16'd then 1 else 0 end as May16,
+case when  me162a<= '30Jun16'd and me163a>= '01Jun16'd then 1 else 0 end as Jun16,
+case when  me162a<= '31Jul16'd and me163a>= '01Jul16'd then 1 else 0 end as Jul16,
+case when  me162a<= '31Aug16'd and me163a>= '01Aug16'd then 1 else 0 end as Aug16,
+case when  me162a<= '30Sep16'd and me163a>= '01Sep16'd then 1 else 0 end as Sep16,
+case when  me162a<= '31Oct16'd and me163a>= '01Oct16'd then 1 else 0 end as Oct16,
+case when  me162a<= '30Nov16'd and me163a>= '01Nov16'd then 1 else 0 end as Nov16,
+case when  me162a<= '31Dec16'd and me163a>= '01Dec16'd then 1 else 0 end as Dec16
+from desc.mcd_final;
+quit;
+
+proc sql;
+create table mcd_data2017 (compress=yes) as
+select*, (2017-me014_year) as age17,
+case when  me162a<= '31Jan17'd and me163a>= '01Jan17'd then 1 else 0 end as Jan17,
+case when  me162a<= '28Feb17'd and me163a>= '01Feb17'd then 1 else 0 end as Feb17,
+case when  me162a<= '31Mar17'd and me163a>= '01Mar17'd then 1 else 0 end as Mar17,
+case when  me162a<= '30Apr17'd and me163a>= '01Apr17'd then 1 else 0 end as Apr17,
+case when  me162a<= '31May17'd and me163a>= '01May17'd then 1 else 0 end as May17,
+case when  me162a<= '30Jun17'd and me163a>= '01Jun17'd then 1 else 0 end as Jun17,
+case when  me162a<= '31Jul17'd and me163a>= '01Jul17'd then 1 else 0 end as Jul17,
+case when  me162a<= '31Aug17'd and me163a>= '01Aug17'd then 1 else 0 end as Aug17,
+case when  me162a<= '30Sep17'd and me163a>= '01Sep17'd then 1 else 0 end as Sep17,
+case when  me162a<= '31Oct17'd and me163a>= '01Oct17'd then 1 else 0 end as Oct17,
+case when  me162a<= '30Nov17'd and me163a>= '01Nov17'd then 1 else 0 end as Nov17,
+case when  me162a<= '31Dec17'd and me163a>= '01Dec17'd then 1 else 0 end as Dec17
+from desc.mcd_final;
+quit;
+
+proc sql;
+create table mcd_data2018 (compress=yes) as
+select*, (2018-me014_year) as age18,
+case when  me162a<= '31Jan18'd and me163a>= '01Jan18'd then 1 else 0 end as Jan18,
+case when  me162a<= '28Feb18'd and me163a>= '01Feb18'd then 1 else 0 end as Feb18,
+case when  me162a<= '31Mar18'd and me163a>= '01Mar18'd then 1 else 0 end as Mar18,
+case when  me162a<= '30Apr18'd and me163a>= '01Apr18'd then 1 else 0 end as Apr18,
+case when  me162a<= '31May18'd and me163a>= '01May18'd then 1 else 0 end as May18,
+case when  me162a<= '30Jun18'd and me163a>= '01Jun18'd then 1 else 0 end as Jun18
+from desc.mcd_final;
+quit;
+
+
+/**********************************************************************************************************
+Restrict sample to persons of age between 18 and 64 years using the age variables created in the previous 
+data steps
+
+*************************************************************************************************************/
+
+proc sql;
+create table desc.mcd_elig14 as
 select*
-from mcd_data3
+from mcd_data2014
 where 18<=age14<=64;
-create table mcd_data2015 as
+create table desc.mcd_elig15 as
 select*
-from mcd_data3
+from mcd_data2015
 where 18<=age15<=64;
-create table mcd_data2016 as
+create table desc.mcd_elig16 as
 select*
-from mcd_data3
+from mcd_data2016
 where 18<=age16<=64;
-create table mcd_data2017 as
+create table desc.mcd_elig17 as
 select*
-from mcd_data3
+from mcd_data2017
 where 18<=age17<=64;
-create table mcd_data2018 as
+create table desc.mcd_elig18 as
 select*
-from mcd_data3
+from mcd_data2018
 where 18<=age18<=64;
 quit;
 
-proc freq data=mcd_data2014;
-table me019; run;
-proc freq data=mcd_data2015;
-table me019; run;
-proc freq data=mcd_data2016;
-table me019; run;
-proc freq data=mcd_data2017;
-table me019; run;
-proc freq data=mcd_data2018;
-table me019; run;
+
+
+
+/*******************************************************************************************************************************************************
+Unique Eligible Members Per Month
+We created a amacro that counts unique member Ids (me107) in each month. 
+Each month is already flagged from a previous data step
+
+To obtain counts only, delete create table and '*,' after the select function
+*********************************************************************************************************************************************************/
+proc options option= macro; run;
+%macro enrolee14(month= ,def= ,agg= );
+proc sql;
+create table &def as
+select*, count(distinct(me998)) as &agg
+from desc.mcd_elig14
+where &month=1; quit;
+%mend enrolee14;
+%enrolee14(month=Jan14 ,def= Jan14data ,agg=Jan14sum)
+%enrolee14(month=Feb14 ,def= Feb14data ,agg=Feb14sum)
+%enrolee14(month=Mar14 ,def= Mar14data ,agg=Mar14sum)
+%enrolee14(month=Apr14 ,def= Apr14data ,agg=Apr14sum)
+%enrolee14(month=May14 ,def= May14data ,agg=May14sum)
+%enrolee14(month=Jun14 ,def= Jun14data ,agg=Jun14sum)
+%enrolee14(month=Jul14 ,def= Jul14data ,agg=Jul14sum)
+%enrolee14(month=Aug14 ,def= Aug14data ,agg=Aug14sum)
+%enrolee14(month=Sep14 ,def= Sep14data ,agg=Sep14sum)
+%enrolee14(month=Oct14 ,def= Oct14data ,agg=Oct14sum)
+%enrolee14(month=Nov14 ,def= Nov14data ,agg=Nov14sum)
+%enrolee14(month=Dec14 ,def= Dec14data ,agg=Dec14sum)
+
+%macro enrolee15(month= ,def= ,agg= );
+proc sql;
+create table &def as
+select*, count(distinct(me998)) as &agg
+from desc.mcd_elig15
+where &month=1; quit;
+%mend enrolee15;
+%enrolee15(month=Jan15 ,def= Jan15data ,agg=Jan15sum)
+%enrolee15(month=Feb15 ,def= Feb15data ,agg=Feb15sum)
+%enrolee15(month=Mar15 ,def= Mar15data ,agg=Mar15sum)
+%enrolee15(month=Apr15 ,def= Apr15data ,agg=Apr15sum)
+%enrolee15(month=May15 ,def= May15data ,agg=May15sum)
+%enrolee15(month=Jun15 ,def= Jun15data ,agg=Jun15sum)
+%enrolee15(month=Jul15 ,def= Jul15data ,agg=Jul15sum)
+%enrolee15(month=Aug15 ,def= Aug15data ,agg=Aug15sum)
+%enrolee15(month=Sep15 ,def= Sep15data ,agg=Sep15sum)
+%enrolee15(month=Oct15 ,def= Oct15data ,agg=Oct15sum)
+%enrolee15(month=Nov15 ,def= Nov15data ,agg=Nov15sum)
+%enrolee15(month=Dec15 ,def= Dec15data ,agg=Dec15sum)
+
+%macro enrolee16(month= ,def= ,agg= );
+proc sql;
+create table &def as
+select*, count(distinct(me998)) as &agg
+from desc.mcd_elig16
+where &month=1; quit;
+%mend enrolee16;
+%enrolee16(month=Jan16 ,def= Jan16data ,agg=Jan16sum)
+%enrolee16(month=Feb16 ,def= Feb16data ,agg=Feb16sum)
+%enrolee16(month=Mar16 ,def= Mar16data ,agg=Mar16sum)
+%enrolee16(month=Apr16 ,def= Apr16data ,agg=Apr16sum)
+%enrolee16(month=May16 ,def= May16data ,agg=May16sum)
+%enrolee16(month=Jun16 ,def= Jun16data ,agg=Jun16sum)
+%enrolee16(month=Jul16 ,def= Jul16data ,agg=Jul16sum)
+%enrolee16(month=Aug16 ,def= Aug16data ,agg=Aug16sum)
+%enrolee16(month=Sep16 ,def= Sep16data ,agg=Sep16sum)
+%enrolee16(month=Oct16 ,def= Oct16data ,agg=Oct16sum)
+%enrolee16(month=Nov16 ,def= Nov16data ,agg=Nov16sum)
+%enrolee16(month=Dec16 ,def= Dec16data ,agg=Dec16sum)
+
+%macro enrolee17(month= ,def= ,agg= );
+proc sql;
+create table &def as
+select*, count(distinct(me998)) as &agg
+from desc.mcd_elig17
+where &month=1; quit;
+%mend enrolee17;
+%enrolee17(month=Jan17 ,def= Jan17data ,agg=Jan17sum)
+%enrolee17(month=Feb17 ,def= Feb17data ,agg=Feb17sum)
+%enrolee17(month=Mar17 ,def= Mar17data ,agg=Mar17sum)
+%enrolee17(month=Apr17 ,def= Apr17data ,agg=Apr17sum)
+%enrolee17(month=May17 ,def= May17data ,agg=May17sum)
+%enrolee17(month=Jun17 ,def= Jun17data ,agg=Jun17sum)
+%enrolee17(month=Jul17 ,def= Jul17data ,agg=Jul17sum)
+%enrolee17(month=Aug17 ,def= Aug17data ,agg=Aug17sum)
+%enrolee17(month=Sep17 ,def= Sep17data ,agg=Sep17sum)
+%enrolee17(month=Oct17 ,def= Oct17data ,agg=Oct17sum)
+%enrolee17(month=Nov17 ,def= Nov17data ,agg=Nov17sum)
+%enrolee17(month=Dec17 ,def= Dec17data ,agg=Dec17sum)
+
+%macro enrolee18(month= ,def= ,agg= );
+proc sql;
+create table &def as
+select*, count(distinct(me998)) as &agg
+from desc.mcd_elig18
+where &month=1; quit;
+%mend enrolee18;
+%enrolee18(month=Jan18 ,def= Jan18data ,agg=Jan18sum)
+%enrolee18(month=Feb18 ,def= Feb18data ,agg=Feb18sum)
+%enrolee18(month=Mar18 ,def= Mar18data ,agg=Mar18sum)
+%enrolee18(month=Apr18 ,def= Apr18data ,agg=Apr18sum)
+%enrolee18(month=May18 ,def= May18data ,agg=May18sum)
+%enrolee18(month=Jun18 ,def= Jun18data ,agg=Jun18sum)
+
+
+/******************************************************************************************************************************************************************************
+																			CLAIMS
+******************************************************************************************************************************************************************************/
+
+
+
+/*******************************************************************************
+|		Pharmacy Enolment														|
+|																				|
+|																				|
+********************************************************************************/
+
+/***********************************************************************************************************************************************
+Pull out NRT Medicaid data from Pharamacy file
+
+***********************************************************************************************************************************************/
+
+/*proc sql;
+create table desc.rx_nrt_data (compress=yes) as
+select* from odbclib.pharmacy
+where pc026 in
+("00009540001"	"00009540101"	"00067021528"	"00067489007"	"00067489014"	"00067500014"	"00067501014"	"00067502014"	"00067503956"	
+"00067512407"	"00067512409"	"00067512414"	"00067512507"	"00067512514"	"00067512607"	"00067512609"	"00067512614"	"00067512628"	
+"00067604556"	"00067612814"	"00067612914"	"00067613014"	"00069046856"	"00069046903"	"00069046911"	"00069046912"	"00069046956"	
+"00069046997"	"00069047102"	"00069047103"	"00069047197"	"00093570301"	"00113017060"	"00113020625"	"00113034405"	"00113042225"	
+"00113073402"	"00113087305"	"00135014502"	"00135015707"	"00135015710"	"00135015807"	"00135015810"	"00135017007"	"00135019401"	
+"00135019402"	"00135019403"	"00135019405"	"00135019502"	"00135019503"	"00135019505"	"00135019602"	"00135019605"	"00135022502"	
+"00135022602"	"00135022905"	"00135023005"	"00135024102"	"00135024202"	"00135024205"	"00135024208"	"00135046601"	"00135046602"	
+"00135046605"	"00135046702"	"00135047401"	"00135047402"	"00135047405"	"00135047501"	"00135047502"	"00135047505"	"00135047508"	
+"00135050802"	"00135050902"	"00135051005"	"00135051006"	"00135051007"	"00135051101"	"00135051106"	"00135051107"	"00135051201"	
+"00135051205"	"00135051301"	"00173055601"	"00173055602"	"00363019005"	"00363019010"	"00363019502"	"00363019602"	"00363020105"	
+"00363020801"	"00363020807"	"00363020907"	"00363034408"	"00363034423"	"00363036506"	"00363036578"	"00363041105"	"00363042062"	
+"00363042098"	"00363042162"	"00363042198"	"00363042405"	"00363042816"	"00363042844"	"00363042849"	"00363042944"	"00363044602"	
+"00363044603"	"00363045658"	"00363045660"	"00363045678"	"00363048044"	"00363048144"	"00363048316"	"00363048344"	"00363053260"	
+"00363053278"	"00363060998"	"00363073402"	"00363087305"	"00363087308"	"00363087310"	"00363089488"	"00363089588"	"00363089653"	
+"00363089688"	"00363095704"	"00363135260"	"00363412262"	"00363412298"	"00363917002"	"00363917102"	"00363918001"	"00363918002"	
+"00378552101"	"00536103881"	"00536103981"	"00536110688"	"00536110788"	"00536110888"	"00536136206"	"00536136223"	"00536136234"	
+"00536137206"	"00536137223"	"00536137234"	"00536302906"	"00536302923"	"00536302934"	"00536303006"	"00536303023"	"00536311201"	
+"00536311237"	"00536311301"	"00536311337"	"00536338601"	"00536338701"	"00536340401"	"00536340501"	"00536589433"	"00536589453"	
+"00536589488"	"00536589533"	"00536589553"	"00536589588"	"00536589633"	"00536589653"	"00536589671"	"00536589688"	"00591354360"	
+"00591354376"	"00766142020"	"00766143020"	"00766144020"	"00766145020"	"00766147024"	"00766150010"	"00766776000"	"00766784508"	
+"00766784708"	"00766784730"	"00766784760"	"00766785870"	"00766788000"	"00766788050"	"00781516960"	"00904573411"	"00904573451"	
+"00904573511"	"00904573551"	"00904573611"	"00904573651"	"00904573711"	"00904573751"	"10939019344"	"10939070633"	"10939070833"	
+"10939073544"	"10939073644"	"10939073744"	"10939090433"	"11110035557"	"11673019005"	"11673019402"	"11673019502"	"11673019602"	
+"11673034405"	"11673045606"	"11673087316"	"11822045348"	"11822222590"	"11822222600"	"11822253470"	"11822253480"	"11822320920"	
+"11822321140"	"11822323900"	"11822323910"	"11822353450"	"11822353460"	"11822422240"	"11822452590"	"11822452600"	"11822452610"	
+"11822452620"	"11822452630"	"11822522250"	"11822558930"	"11822573120"	"11822573270"	"11822573280"	"11822573290"	"11822622240"	
+"11822854120"	"11822854130"	"11917001338"	"11917017228"	"11917017513"	"24385059471"	"24385059771"	"24385059871"	"24385059971"	
+"24385097567"	"30142017025"	"30142034405"	"35356001114"	"35356001256"	"35356017456"	"35356059814"	"36800002925"	"36800020625"	
+"36800045678"	"36800053278"	"36800087305"	"37205020371"	"37205020471"	"37205035874"	"37205036174"	"37205036374"	"37205096758"	
+"37205096778"	"37205096858"	"37205096878"	"37205098769"	"37205098869"	"40986002989"	"41163034405"	"41163087305"	"41250073402"	
+"41250087310"	"43598044556"	"43598044670"	"43598044674"	"43598044770"	"43598044771"	"43598044774"	"43598044828"	"43598044870"	
+"43598044871"	"43598044874"	"45802008901"	"45802008902"	"45802011078"	"45802020625"	"45802034405"	"45802087305"	"45802095702"	
+"46122017125"	"46122017225"	"46122017320"	"46122017460"	"46122017608"	"46122017708"	"46122025415"	"46122025460"	"46122025515"	
+"46122028660"	"46122035274"	"46122035374"	"46122035474"	"48985000150"	"48985000151"	"48985000152"	"48985000153"	"48985000154"	
+"49035002996"	"49035012410"	"49035017096"	"49035019010"	"49035019401"	"49035019402"	"49035019502"	"49035019602"	"49035035278"	
+"49035042296"	"49035044278"	"49035045660"	"49035045678"	"49035053206"	"49035053260"	"49035053278"	"49035073401"	"49035073403"	
+"49035085478"	"49035087303"	"49035099810"	"49348014446"	"49348014546"	"49348014646"	"49348057208"	"49348057236"	"49348057308"	
+"49348057336"	"49348069136"	"49348069236"	"49348078710"	"49348078810"	"49348085216"	"49348085316"	"49781014214"	"49781014314"	
+"49781014414"	"50428000773"	"50428000775"	"50428000776"	"50428003053"	"50428016528"	"50428040647"	"50428102202"	"50428133177"	
+"50428133190"	"50428173013"	"50428331733"	"50428338618"	"50428394373"	"50428394375"	"50428446877"	"50428446881"	"50428456109"	
+"50428456112"	"50428456113"	"50428473604"	"50428717943"	"50428718184"	"50428718198"	"50428720014"	"50428720035"	"52569013319"	
+"52569013587"	"52959095156"	"54569438901"	"54868581900"	"59779034423"	"59779042296"	"59779044374"	"59779044574"	"59779044870"	
+"59779044874"	"59779045678"	"59779053278"	"59779073460"	"59779087323"	"60429044314"	"60429044414"	"60429044514"	"62011004702"	
+"62011004801"	"62011005001"	"62011017001"	"62011017101"	"62011017201"	"62011017301"	"62011034901"	"62011035001"	"62011035101"	
+"67767011760"	"70000011301"	"70000011302"	"70000011401"	"70000011402"	"70000011501"	"70000011502"	"70000011601"	"70000012001"	
+"70000012201"	"70677003001"	"70677003101"	"70677003201"	"87701041285"	"96295012718"	"96295012720"	"96295012788");
+quit;*/
+
+/**********************************************************************************************************************************************
+Categorise the drugs by NRT type
+*************************************************************************************************************************************************/
+proc sql;
+create table rx_nrt (compress=yes) as
+select*, case 
+when pc026 in ("00009540001") then "catridge" 
+when pc026 in ("00113017060",	"00113020625",	"00113042225",	"00135015707",	"00135015710",	"00135015807",	"00135015810",	"00135017007",	
+"00135022502",	"00135022602",	"00135022905",	"00135023005",	"00135024102",	"00135024202",	"00135024205",	"00135024208",	"00135046601",	
+"00135046602",	"00135046605",	"00135046702",	"00135047401",	"00135047402",	"00135047405",	"00135047501",	"00135047502",	"00135047505",	
+"00135047508",	"00363036506",	"00363036578",	"00363042062",	"00363042098",	"00363042162",	"00363042198",	"00363042816",	"00363042844",	
+"00363042849",	"00363042944",	"00363045658",	"00363045660",	"00363045678",	"00363048044",	"00363048144",	"00363048316",	"00363048344",	
+"00363053260",	"00363053278",	"00363060998",	"00363135260",	"00363412262",	"00363412298",	"00536136206",	"00536136223",	"00536136234",	
+"00536137206",	"00536137223",	"00536137234",	"00536302906",	"00536302923",	"00536302934",	"00536303006",	"00536303023",	"00536311201",	
+"00536311237",	"00536311301",	"00536311337",	"00536338601",	"00536338701",	"00536340401",	"00536340501",	"00766776000",	"00766784508",	
+"00766784708",	"00766784730",	"00766784760",	"00766785870",	"00904573411",	"00904573451",	"00904573511",	"00904573551",	"00904573611",	
+"00904573651",	"00904573711",	"00904573751",	"10939090433",	"11673045606",	"11822045348",	"11822253470",	"11822253480",	"11822320920",	
+"11822321140",	"11822353450",	"11822353460",	"11822558930",	"11822573270",	"11822854120",	"11822854130",	"24385059471",	"24385059771",	
+"24385059871",	"24385059971",	"30142017025",	"36800002925",	"36800020625",	"36800045678",	"36800053278",	"37205020371",	"37205020471",	
+"37205096758",	"37205096778",	"37205096858",	"37205096878",	"45802011078",	"45802020625",	"46122017125",	"46122017225",	"46122017320",	
+"46122017460",	"46122028660",	"49035002996",	"49035017096",	"49035035278",	"49035042296",	"49035044278",	"49035045660",	"49035045678",	
+"49035053206",	"49035053260",	"49035053278",	"49035085478",	"49348057208",	"49348057236",	"49348057308",	"49348057336",	"49348069136",	
+"49348069236",	"49348078710",	"49348078810",	"50428102202",	"50428394373",	"50428394375",	"50428446877",	"50428446881",	"50428456113",	
+"50428718184",	"50428718198",	"50428720014",	"50428720035",	"59779042296",	"59779045678",	"59779053278",	"62011004702",	"62011017001",	
+"70000011601",	"70000012001",	"70000012201") then "Gum"
+when pc026 in ("00113034405",	"00113087305",	"00135051005",	"00135051006",	"00135051007",	"00135051101",	"00135051106",	"00135051107",	
+"00135051201",	"00135051205",	"00135051301",	"00363019005",	"00363019010",	"00363020105",	"00363020801",	"00363020807",	"00363020907",	
+"00363034408",	"00363034423",	"00363041105",	"00363042405",	"00363044602",	"00363044603",	"00363087305",	"00363087308",	"00363087310",	
+"00363917002",	"00363917102",	"00536103881",	"00536103981",	"00766150010",	"10939019344",	"11673019005",	"11673034405",	"11673087316",	
+"11822323900",	"11822323910",	"11822573280",	"11822573290",	"24385097567",	"30142034405",	"36800087305",	"37205098769",	"37205098869",	
+"41163034405",	"41163087305",	"41250087310",	"45802008901",	"45802008902",	"45802034405",	"45802087305",	"45802095702",	"46122017608",	
+"46122017708",	"49035012410",	"49035019010",	"49035087303",	"49035099810",	"49348085216",	"49348085316",	"50428016528",	"50428331733",	
+"50428456109",	"50428456112",	"50428717943",	"59779034423",	"59779087323",	"62011004801",	"62011017101",	"87701041285") then "Lozenge"
+when pc026 in ("00113073402",	"00135050802",	"00135050902",	"00363073402",	"00363095704",	"00766788000",	"00766788050",	"11822422240",	
+"11822522250",	"11822622240",	"41250073402",	"46122025415",	"46122025460",	"46122025515",	"49035073401",	"49035073403",	"50428040647",	
+"59779073460") then "Mini_Lozenge"
+when pc026 in ("00067021528",	"00067489007",	"00067489014",	"00067500014",	"00067501014",	"00067502014",	"00067512407",	"00067512409",	
+"00067512414",	"00067512507",	"00067512514",	"00067512607",	"00067512609",	"00067512614",	"00067512628",	"00067612814",	"00067612914",	
+"00067613014",	"00135014502",	"00135019401",	"00135019402",	"00135019403",	"00135019405",	"00135019502",	"00135019503",	"00135019505",	
+"00135019602",	"00135019605",	"00363019502",	"00363019602",	"00363089488",	"00363089588",	"00363089653",	"00363089688",	"00363918001",	
+"00363918002",	"00536110688",	"00536110788",	"00536110888",	"00536589433",	"00536589453",	"00536589488",	"00536589533",	"00536589553",	
+"00536589588",	"00536589633",	"00536589653",	"00536589671",	"00536589688",	"00766142020",	"00766143020",	"00766144020",	"00766145020",	
+"00766147024",	"10939070633",	"10939070833",	"10939073544",	"10939073644",	"10939073744",	"11110035557",	"11673019402",	"11673019502",	
+"11673019602",	"11822222590",	"11822222600",	"11822452590",	"11822452600",	"11822452610",	"11822452620",	"11822452630",	"11822573120",	
+"11917001338",	"11917017228",	"11917017513",	"35356059814",	"37205035874",	"37205036174",	"37205036374",	"40986002989",	"43598044670",	
+"43598044674",	"43598044770",	"43598044771",	"43598044774",	"43598044828",	"43598044870",	"43598044871",	"43598044874",	"46122035274",	
+"46122035374",	"46122035474",	"48985000150",	"48985000151",	"48985000152",	"48985000153",	"48985000154",	"49035019401",	"49035019402",	
+"49035019502",	"49035019602",	"49348014446",	"49348014546",	"49348014646",	"49781014214",	"49781014314",	"49781014414",	"50428000773",	
+"50428000775",	"50428000776",	"50428003053",	"50428133177",	"50428133190",	"50428173013",	"50428338618",	"50428473604",	"52569013319",	
+"52569013587",	"54569438901",	"54868581900",	"59779044374",	"59779044574",	"59779044870",	"59779044874",	"60429044314",	"60429044414",	
+"60429044514",	"62011005001",	"62011017201",	"62011017301",	"62011034901",	"62011035001",	"62011035101",	"70000011301",	"70000011302",	
+"70000011401",	"70000011402",	"70000011501",	"70000011502",	"70677003001",	"70677003101",	"70677003201",	"96295012718",	"96295012720",	
+"96295012788",	"00067503956",	"00067604556",	"43598044556") then "Patch"
+when pc026 in ("00009540101") then "Spray"
+when pc026 in ("00069046856",	"00069046903",	"00069046911",	"00069046912",	"00069046956",	"00069046997",	"35356001114",	"35356001256",	
+"35356017456",	"52959095156") then "Tablet"
+when pc026 in ("00093570301",	"00173055601",	"00173055602",	"00378552101",	"00591354360",	"00591354376",	"00781516960",	
+"67767011760",	"00069047102",	"00069047103",	"00069047197") then "Tablet_ER" else "NA"
+end as nrt_cat
+from desc.rx_nrt_data; quit;
+
+
+
+/***********************************************************************************************************************************************************
+Merge Pharmacy and Member file by member ID overall
+
+**************************************************************************************************************************************************************/
+proc sql;
+	Create table membernrt_all as
+		Select * from desc.mcd_sort_uni as x left join rx_nrt as y
+		on x.me107 = y.pc107 and x.me001 = y.pc001;
+Quit;
+
+/*******************************************************************************************************
+Frequencies of NRT dustributed overall, and adistributed to the two subgroups.
+
+Note that the results were not restricted to the age 18 to 64 because it is not possible at this stage. 
+********************************************************************************************************/
+proc freq data=membernrt_all;
+	table nrt_cat;
+		title "NRT Distributed by Category in the entire Database";
+run;
+
+proc freq data=membernrt_all;
+	table nrt_cat;
+		where medicaidoriginal=1;
+			title "NRT Distributed by Category for Traditional Medicaid";
+run;
+
+proc freq data=membernrt_all;
+	table nrt_cat;
+		where medicaidexpansion=1;
+			title "NRT Distributed by Category for Medicaid Expansion";
+run;
+
+
+/******************************************************************************************************
+Create annualized NRT datasets with variables to create a flag for each month
+
+Note: pc064 is the prescription date 
+*********************************************************************************************************/
+
+proc sql;
+create table rx_nrt_data2014 (compress=yes) as
+select*,(2014-pc013_year) as p_age14,
+case when  pc064>= '01Jan14'd and pc064<= '31Jan14'd then 1 else 0 end as Jan14nrt,
+case when  pc064>= '01Feb14'd and pc064<= '28Feb14'd then 1 else 0 end as Feb14nrt,
+case when  pc064>= '01Mar14'd and pc064<= '31Mar14'd then 1 else 0 end as Mar14nrt,
+case when  pc064>= '01Apr14'd and pc064<= '30Apr14'd then 1 else 0 end as Apr14nrt,
+case when  pc064>= '01May14'd and pc064<= '31May14'd then 1 else 0 end as May14nrt,
+case when  pc064>= '01Jun14'd and pc064<= '30Jun14'd then 1 else 0 end as Jun14nrt,
+case when  pc064>= '01Jul14'd and pc064<= '31Jul14'd then 1 else 0 end as Jul14nrt,
+case when  pc064>= '01Aug14'd and pc064<= '31Aug14'd then 1 else 0 end as Aug14nrt,
+case when  pc064>= '01Sep14'd and pc064<= '30Sep14'd then 1 else 0 end as Sep14nrt,
+case when  pc064>= '01Oct14'd and pc064<= '31Oct14'd then 1 else 0 end as Oct14nrt,
+case when  pc064>= '01Nov14'd and pc064<= '30Nov14'd then 1 else 0 end as Nov14nrt,
+case when  pc064>= '01Dec14'd and pc064<= '31Dec14'd then 1 else 0 end as Dec14nrt
+from membernrt_all;
+quit;
+
+proc sql;
+create table rx_nrt_data2015 (compress=yes) as
+select*,(2015-pc013_year) as p_age15,
+case when  pc064>= '01Jan15'd and pc064<= '31Jan15'd then 1 else 0 end as Jan15nrt,
+case when  pc064>= '01Feb15'd and pc064<= '28Feb15'd then 1 else 0 end as Feb15nrt,
+case when  pc064>= '01Mar15'd and pc064<= '31Mar15'd then 1 else 0 end as Mar15nrt,
+case when  pc064>= '01Apr15'd and pc064<= '30Apr15'd then 1 else 0 end as Apr15nrt,
+case when  pc064>= '01May15'd and pc064<= '31May15'd then 1 else 0 end as May15nrt,
+case when  pc064>= '01Jun15'd and pc064<= '30Jun15'd then 1 else 0 end as Jun15nrt,
+case when  pc064>= '01Jul15'd and pc064<= '31Jul15'd then 1 else 0 end as Jul15nrt,
+case when  pc064>= '01Aug15'd and pc064<= '31Aug15'd then 1 else 0 end as Aug15nrt,
+case when  pc064>= '01Sep15'd and pc064<= '30Sep15'd then 1 else 0 end as Sep15nrt,
+case when  pc064>= '01Oct15'd and pc064<= '31Oct15'd then 1 else 0 end as Oct15nrt,
+case when  pc064>= '01Nov15'd and pc064<= '30Nov15'd then 1 else 0 end as Nov15nrt,
+case when  pc064>= '01Dec15'd and pc064<= '31Dec15'd then 1 else 0 end as Dec15nrt
+from membernrt_all;
+quit;
+
+proc sql;
+create table rx_nrt_data2016 (compress=yes) as
+select*,(2016-pc013_year) as p_age16,
+case when  pc064>= '01Jan16'd and pc064<= '31Jan16'd then 1 else 0 end as Jan16nrt,
+case when  pc064>= '01Feb16'd and pc064<= '29Feb16'd then 1 else 0 end as Feb16nrt,
+case when  pc064>= '01Mar16'd and pc064<= '31Mar16'd then 1 else 0 end as Mar16nrt,
+case when  pc064>= '01Apr16'd and pc064<= '30Apr16'd then 1 else 0 end as Apr16nrt,
+case when  pc064>= '01May16'd and pc064<= '31May16'd then 1 else 0 end as May16nrt,
+case when  pc064>= '01Jun16'd and pc064<= '30Jun16'd then 1 else 0 end as Jun16nrt,
+case when  pc064>= '01Jul16'd and pc064<= '31Jul16'd then 1 else 0 end as Jul16nrt,
+case when  pc064>= '01Aug16'd and pc064<= '31Aug16'd then 1 else 0 end as Aug16nrt,
+case when  pc064>= '01Sep16'd and pc064<= '30Sep16'd then 1 else 0 end as Sep16nrt,
+case when  pc064>= '01Oct16'd and pc064<= '31Oct16'd then 1 else 0 end as Oct16nrt,
+case when  pc064>= '01Nov16'd and pc064<= '30Nov16'd then 1 else 0 end as Nov16nrt,
+case when  pc064>= '01Dec16'd and pc064<= '31Dec16'd then 1 else 0 end as Dec16nrt
+from membernrt_all;
+quit;
+
+proc sql;
+create table rx_nrt_data2017 (compress=yes) as
+select*,(2017-pc013_year) as p_age17,
+case when  pc064>= '01Jan17'd and pc064<= '31Jan17'd then 1 else 0 end as Jan17nrt,
+case when  pc064>= '01Feb17'd and pc064<= '28Feb17'd then 1 else 0 end as Feb17nrt,
+case when  pc064>= '01Mar17'd and pc064<= '31Mar17'd then 1 else 0 end as Mar17nrt,
+case when  pc064>= '01Apr17'd and pc064<= '30Apr17'd then 1 else 0 end as Apr17nrt,
+case when  pc064>= '01May17'd and pc064<= '31May17'd then 1 else 0 end as May17nrt,
+case when  pc064>= '01Jun17'd and pc064<= '30Jun17'd then 1 else 0 end as Jun17nrt,
+case when  pc064>= '01Jul17'd and pc064<= '31Jul17'd then 1 else 0 end as Jul17nrt,
+case when  pc064>= '01Aug17'd and pc064<= '31Aug17'd then 1 else 0 end as Aug17nrt,
+case when  pc064>= '01Sep17'd and pc064<= '30Sep17'd then 1 else 0 end as Sep17nrt,
+case when  pc064>= '01Oct17'd and pc064<= '31Oct17'd then 1 else 0 end as Oct17nrt,
+case when  pc064>= '01Nov17'd and pc064<= '30Nov17'd then 1 else 0 end as Nov17nrt,
+case when  pc064>= '01Dec17'd and pc064<= '31Dec17'd then 1 else 0 end as Dec17nrt
+from membernrt_all;
+quit;
+
+proc sql;
+create table rx_nrt_data2018 (compress=yes) as
+select*,(2018-pc013_year) as p_age18,
+case when  pc064>= '01Jan18'd and pc064<= '31Jan18'd then 1 else 0 end as Jan18nrt,
+case when  pc064>= '01Feb18'd and pc064<= '28Feb18'd then 1 else 0 end as Feb18nrt,
+case when  pc064>= '01Mar18'd and pc064<= '31Mar18'd then 1 else 0 end as Mar18nrt,
+case when  pc064>= '01Apr18'd and pc064<= '30Apr18'd then 1 else 0 end as Apr18nrt,
+case when  pc064>= '01May18'd and pc064<= '31May18'd then 1 else 0 end as May18nrt,
+case when  pc064>= '01Jun18'd and pc064<= '30Jun18'd then 1 else 0 end as Jun18nrt
+from membernrt_all;
+quit;
+
+/***********************************************************************************************************************************
+Restrict sample to persons of age between 18 and 64 years using the age variables created in the previous 
+data steps
+*************************************************************************************************************************************/
+proc sql;
+	create table rx_nrt_data_2014 as
+		select*
+			from rx_nrt_data2014
+				where 18<=p_age14<=64;
+	create table rx_nrt_data_2015 as
+		select*
+			from rx_nrt_data2015
+				where 18<=p_age15<=64;
+	create table rx_nrt_data_2016 as
+		select*
+			from rx_nrt_data2016
+				where 18<=p_age16<=64;
+	create table rx_nrt_data_2017 as
+		select*
+			from rx_nrt_data2017
+				where 18<=p_age17<=64;
+	create table rx_nrt_data_2018 as
+		select*
+			from rx_nrt_data2018
+				where 18<=p_age18<=64;
+quit;
+
+/***********************************************************************************************************************************************************************************
+								Disaggregate annual NRT data into months
+***********************************************************************************************************************************************************************************/
+
+proc options option= macro; run;
+%macro rx_nrt14(period= ,deftab= ,agg= );
+proc sql;
+	create table &deftab as 
+		select*,count(distinct(pc107)) as &agg 
+			from rx_nrt_data_2014
+				where &period=1; quit;
+%mend rx_nrt14;
+%rx_nrt14(period=Jan14nrt ,deftab= Jan14nrtdata, agg=Jan14nrtsum)
+%rx_nrt14(period=Feb14nrt ,deftab= Feb14nrtdata, agg=Feb14nrtsum)
+%rx_nrt14(period=Mar14nrt ,deftab= Mar14nrtdata, agg=Mar14nrtsum)
+%rx_nrt14(period=Apr14nrt ,deftab= Apr14nrtdata, agg=Apr14nrtsum)
+%rx_nrt14(period=May14nrt ,deftab= May14nrtdata, agg=May14nrtsum)
+%rx_nrt14(period=Jun14nrt ,deftab= Jun14nrtdata, agg=Jun14nrtsum)
+%rx_nrt14(period=Jul14nrt ,deftab= Jul14nrtdata, agg=Jul14nrtsum)
+%rx_nrt14(period=Aug14nrt ,deftab= Aug14nrtdata, agg=Aug14nrtsum)
+%rx_nrt14(period=Sep14nrt ,deftab= Sep14nrtdata, agg=Sep14nrtsum)
+%rx_nrt14(period=Oct14nrt ,deftab= Oct14nrtdata, agg=Oct14nrtsum)
+%rx_nrt14(period=Nov14nrt ,deftab= Nov14nrtdata, agg=Nov14nrtsum)
+%rx_nrt14(period=Dec14nrt ,deftab= Dec14nrtdata, agg=Dec14nrtsum)
+
+%macro rx_nrt15(period= ,deftab= ,agg= );
+proc sql;
+	create table &deftab as 
+		select*, count(distinct(pc107)) as &agg 
+			from rx_nrt_data_2015
+				where &period=1; quit;
+%mend rx_nrt15;
+%rx_nrt15(period=Jan15nrt ,deftab= Jan15nrtdata, agg=Jan15nrtsum)
+%rx_nrt15(period=Feb15nrt ,deftab= Feb15nrtdata, agg=Feb15nrtsum)
+%rx_nrt15(period=Mar15nrt ,deftab= Mar15nrtdata, agg=Mar15nrtsum)
+%rx_nrt15(period=Apr15nrt ,deftab= Apr15nrtdata, agg=Apr15nrtsum)
+%rx_nrt15(period=May15nrt ,deftab= May15nrtdata, agg=May15nrtsum)
+%rx_nrt15(period=Jun15nrt ,deftab= Jun15nrtdata, agg=Jun15nrtsum)
+%rx_nrt15(period=Jul15nrt ,deftab= Jul15nrtdata, agg=Jul15nrtsum)
+%rx_nrt15(period=Aug15nrt ,deftab= Aug15nrtdata, agg=Aug15nrtsum)
+%rx_nrt15(period=Sep15nrt ,deftab= Sep15nrtdata, agg=Sep15nrtsum)
+%rx_nrt15(period=Oct15nrt ,deftab= Oct15nrtdata, agg=Oct15nrtsum)
+%rx_nrt15(period=Nov15nrt ,deftab= Nov15nrtdata, agg=Nov15nrtsum)
+%rx_nrt15(period=Dec15nrt ,deftab= Dec15nrtdata, agg=Dec15nrtsum)
+
+%macro rx_nrt16(period= ,deftab= ,agg= );
+proc sql;
+	create table &deftab as 
+		select*, count(distinct(pc107)) as &agg 
+			from rx_nrt_data_2016
+				where &period=1; quit;
+%mend rx_nrt16;
+%rx_nrt16(period=Jan16nrt ,deftab= Jan16nrtdata, agg=Jan16nrtsum)
+%rx_nrt16(period=Feb16nrt ,deftab= Feb16nrtdata, agg=Feb16nrtsum)
+%rx_nrt16(period=Mar16nrt ,deftab= Mar16nrtdata, agg=Mar16nrtsum)
+%rx_nrt16(period=Apr16nrt ,deftab= Apr16nrtdata, agg=Apr16nrtsum)
+%rx_nrt16(period=May16nrt ,deftab= May16nrtdata, agg=May16nrtsum)
+%rx_nrt16(period=Jun16nrt ,deftab= Jun16nrtdata, agg=Jun16nrtsum)
+%rx_nrt16(period=Jul16nrt ,deftab= Jul16nrtdata, agg=Jul16nrtsum)
+%rx_nrt16(period=Aug16nrt ,deftab= Aug16nrtdata, agg=Aug16nrtsum)
+%rx_nrt16(period=Sep16nrt ,deftab= Sep16nrtdata, agg=Sep16nrtsum)
+%rx_nrt16(period=Oct16nrt ,deftab= Oct16nrtdata, agg=Oct16nrtsum)
+%rx_nrt16(period=Nov16nrt ,deftab= Nov16nrtdata, agg=Nov16nrtsum)
+%rx_nrt16(period=Dec16nrt ,deftab= Dec16nrtdata, agg=Dec16nrtsum)
+
+%macro rx_nrt17(period= ,deftab= ,agg= );
+proc sql;
+	create table &deftab as 
+		select*, count(distinct(pc107)) as &agg 
+			from rx_nrt_data_2017
+				where &period=1; quit;
+%mend rx_nrt17;
+%rx_nrt17(period=Jan17nrt ,deftab= Jan17nrtdata, agg=Jan17nrtsum)
+%rx_nrt17(period=Feb17nrt ,deftab= Feb17nrtdata, agg=Feb17nrtsum)
+%rx_nrt17(period=Mar17nrt ,deftab= Mar17nrtdata, agg=Mar17nrtsum)
+%rx_nrt17(period=Apr17nrt ,deftab= Apr17nrtdata, agg=Apr17nrtsum)
+%rx_nrt17(period=May17nrt ,deftab= May17nrtdata, agg=May17nrtsum)
+%rx_nrt17(period=Jun17nrt ,deftab= Jun17nrtdata, agg=Jun17nrtsum)
+%rx_nrt17(period=Jul17nrt ,deftab= Jul17nrtdata, agg=Jul17nrtsum)
+%rx_nrt17(period=Aug17nrt ,deftab= Aug17nrtdata, agg=Aug17nrtsum)
+%rx_nrt17(period=Sep17nrt ,deftab= Sep17nrtdata, agg=Sep17nrtsum)
+%rx_nrt17(period=Oct17nrt ,deftab= Oct17nrtdata, agg=Oct17nrtsum)
+%rx_nrt17(period=Nov17nrt ,deftab= Nov17nrtdata, agg=Nov17nrtsum)
+%rx_nrt17(period=Dec17nrt ,deftab= Dec17nrtdata, agg=Dec17nrtsum)
+
+%macro rx_nrt18(period= ,deftab= ,agg= );
+proc sql;
+	create table &deftab as 
+		select*, count(distinct(pc107)) as &agg 
+			from rx_nrt_data_2018
+				where &period=1; quit;
+%mend rx_nrt18;
+%rx_nrt18(period=Jan18nrt ,deftab= Jan18nrtdata, agg=Jan18nrtsum)
+%rx_nrt18(period=Feb18nrt ,deftab= Feb18nrtdata, agg=Feb18nrtsum)
+%rx_nrt18(period=Mar18nrt ,deftab= Mar18nrtdata, agg=Mar18nrtsum)
+%rx_nrt18(period=Apr18nrt ,deftab= Apr18nrtdata, agg=Apr18nrtsum)
+%rx_nrt18(period=May18nrt ,deftab= May18nrtdata, agg=May18nrtsum)
+%rx_nrt18(period=Jun18nrt ,deftab= Jun18nrtdata, agg=Jun18nrtsum)
+
+
+/*********************************************************************************************************************
+Number of NRT Claims per month
+***********************************************************************************************************************/
+%macro memnrtcount(nrtsource= ,mmyy= );
+proc sql;
+	select count(unic_member) as &mmyy
+		from &nrtsource
+			where &mmyy=1; quit;
+				title "NRT by month";
+%mend memnrtcount;
+%memnrtcount(nrtsource=Jan14nrtdata, mmyy=Jan14nrt)
+%memnrtcount(nrtsource=Feb14nrtdata, mmyy=Feb14nrt)
+%memnrtcount(nrtsource=Mar14nrtdata, mmyy=Mar14nrt)
+%memnrtcount(nrtsource=Apr14nrtdata, mmyy=Apr14nrt)
+%memnrtcount(nrtsource=May14nrtdata, mmyy=May14nrt)
+%memnrtcount(nrtsource=Jun14nrtdata, mmyy=Jun14nrt)
+%memnrtcount(nrtsource=Jul14nrtdata, mmyy=Jul14nrt)
+%memnrtcount(nrtsource=Aug14nrtdata, mmyy=Aug14nrt)
+%memnrtcount(nrtsource=Sep14nrtdata, mmyy=Sep14nrt)
+%memnrtcount(nrtsource=Oct14nrtdata, mmyy=Oct14nrt)
+%memnrtcount(nrtsource=Nov14nrtdata, mmyy=Nov14nrt)
+%memnrtcount(nrtsource=Dec14nrtdata, mmyy=Dec14nrt)
+%memnrtcount(nrtsource=Jan15nrtdata, mmyy=Jan15nrt)
+%memnrtcount(nrtsource=Feb15nrtdata, mmyy=Feb15nrt)
+%memnrtcount(nrtsource=Mar15nrtdata, mmyy=Mar15nrt)
+%memnrtcount(nrtsource=Apr15nrtdata, mmyy=Apr15nrt)
+%memnrtcount(nrtsource=May15nrtdata, mmyy=May15nrt)
+%memnrtcount(nrtsource=Jun15nrtdata, mmyy=Jun15nrt)
+%memnrtcount(nrtsource=Jul15nrtdata, mmyy=Jul15nrt)
+%memnrtcount(nrtsource=Aug15nrtdata, mmyy=Aug15nrt)
+%memnrtcount(nrtsource=Sep15nrtdata, mmyy=Sep15nrt)
+%memnrtcount(nrtsource=Oct15nrtdata, mmyy=Oct15nrt)
+%memnrtcount(nrtsource=Nov15nrtdata, mmyy=Nov15nrt)
+%memnrtcount(nrtsource=Dec15nrtdata, mmyy=Dec15nrt)
+%memnrtcount(nrtsource=Jan16nrtdata, mmyy=Jan16nrt)
+%memnrtcount(nrtsource=Feb16nrtdata, mmyy=Feb16nrt)
+%memnrtcount(nrtsource=Mar16nrtdata, mmyy=Mar16nrt)
+%memnrtcount(nrtsource=Apr16nrtdata, mmyy=Apr16nrt)
+%memnrtcount(nrtsource=May16nrtdata, mmyy=May16nrt)
+%memnrtcount(nrtsource=Jun16nrtdata, mmyy=Jun16nrt)
+%memnrtcount(nrtsource=Jul16nrtdata, mmyy=Jul16nrt)
+%memnrtcount(nrtsource=Aug16nrtdata, mmyy=Aug16nrt)
+%memnrtcount(nrtsource=Sep16nrtdata, mmyy=Sep16nrt)
+%memnrtcount(nrtsource=Oct16nrtdata, mmyy=Oct16nrt)
+%memnrtcount(nrtsource=Nov16nrtdata, mmyy=Nov16nrt)
+%memnrtcount(nrtsource=Dec16nrtdata, mmyy=Dec16nrt)
+%memnrtcount(nrtsource=Jan17nrtdata, mmyy=Jan17nrt)
+%memnrtcount(nrtsource=Feb17nrtdata, mmyy=Feb17nrt)
+%memnrtcount(nrtsource=Mar17nrtdata, mmyy=Mar17nrt)
+%memnrtcount(nrtsource=Apr17nrtdata, mmyy=Apr17nrt)
+%memnrtcount(nrtsource=May17nrtdata, mmyy=May17nrt)
+%memnrtcount(nrtsource=Jun17nrtdata, mmyy=Jun17nrt)
+%memnrtcount(nrtsource=Jul17nrtdata, mmyy=Jul17nrt)
+%memnrtcount(nrtsource=Aug17nrtdata, mmyy=Aug17nrt)
+%memnrtcount(nrtsource=Sep17nrtdata, mmyy=Sep17nrt)
+%memnrtcount(nrtsource=Oct17nrtdata, mmyy=Oct17nrt)
+%memnrtcount(nrtsource=Nov17nrtdata, mmyy=Nov17nrt)
+%memnrtcount(nrtsource=Dec17nrtdata, mmyy=Dec17nrt)
+%memnrtcount(nrtsource=Jan18nrtdata, mmyy=Jan18nrt)
+%memnrtcount(nrtsource=Feb18nrtdata, mmyy=Feb18nrt)
+%memnrtcount(nrtsource=Mar18nrtdata, mmyy=Mar18nrt)
+%memnrtcount(nrtsource=Apr18nrtdata, mmyy=Apr18nrt)
+%memnrtcount(nrtsource=May18nrtdata, mmyy=May18nrt)
+%memnrtcount(nrtsource=Jun18nrtdata, mmyy=Jun18nrt)
+
+/*********************************************************************************************************************
+Number of enrolleess and NRT Claims per month
+
+***********************************************************************************************************************/
+%macro memnrtcount(nrtsource= ,mmyy= );
+proc sql;
+	select count(distinct(unic_member)) as &mmyy
+		from &nrtsource
+			where &mmyy=1; quit;
+				title "NRT by month";
+%mend memnrtcount;
+%memnrtcount(nrtsource=Jan14nrtdata, mmyy=Jan14nrt)
+%memnrtcount(nrtsource=Feb14nrtdata, mmyy=Feb14nrt)
+%memnrtcount(nrtsource=Mar14nrtdata, mmyy=Mar14nrt)
+%memnrtcount(nrtsource=Apr14nrtdata, mmyy=Apr14nrt)
+%memnrtcount(nrtsource=May14nrtdata, mmyy=May14nrt)
+%memnrtcount(nrtsource=Jun14nrtdata, mmyy=Jun14nrt)
+%memnrtcount(nrtsource=Jul14nrtdata, mmyy=Jul14nrt)
+%memnrtcount(nrtsource=Aug14nrtdata, mmyy=Aug14nrt)
+%memnrtcount(nrtsource=Sep14nrtdata, mmyy=Sep14nrt)
+%memnrtcount(nrtsource=Oct14nrtdata, mmyy=Oct14nrt)
+%memnrtcount(nrtsource=Nov14nrtdata, mmyy=Nov14nrt)
+%memnrtcount(nrtsource=Dec14nrtdata, mmyy=Dec14nrt)
+%memnrtcount(nrtsource=Jan15nrtdata, mmyy=Jan15nrt)
+%memnrtcount(nrtsource=Feb15nrtdata, mmyy=Feb15nrt)
+%memnrtcount(nrtsource=Mar15nrtdata, mmyy=Mar15nrt)
+%memnrtcount(nrtsource=Apr15nrtdata, mmyy=Apr15nrt)
+%memnrtcount(nrtsource=May15nrtdata, mmyy=May15nrt)
+%memnrtcount(nrtsource=Jun15nrtdata, mmyy=Jun15nrt)
+%memnrtcount(nrtsource=Jul15nrtdata, mmyy=Jul15nrt)
+%memnrtcount(nrtsource=Aug15nrtdata, mmyy=Aug15nrt)
+%memnrtcount(nrtsource=Sep15nrtdata, mmyy=Sep15nrt)
+%memnrtcount(nrtsource=Oct15nrtdata, mmyy=Oct15nrt)
+%memnrtcount(nrtsource=Nov15nrtdata, mmyy=Nov15nrt)
+%memnrtcount(nrtsource=Dec15nrtdata, mmyy=Dec15nrt)
+%memnrtcount(nrtsource=Jan16nrtdata, mmyy=Jan16nrt)
+%memnrtcount(nrtsource=Feb16nrtdata, mmyy=Feb16nrt)
+%memnrtcount(nrtsource=Mar16nrtdata, mmyy=Mar16nrt)
+%memnrtcount(nrtsource=Apr16nrtdata, mmyy=Apr16nrt)
+%memnrtcount(nrtsource=May16nrtdata, mmyy=May16nrt)
+%memnrtcount(nrtsource=Jun16nrtdata, mmyy=Jun16nrt)
+%memnrtcount(nrtsource=Jul16nrtdata, mmyy=Jul16nrt)
+%memnrtcount(nrtsource=Aug16nrtdata, mmyy=Aug16nrt)
+%memnrtcount(nrtsource=Sep16nrtdata, mmyy=Sep16nrt)
+%memnrtcount(nrtsource=Oct16nrtdata, mmyy=Oct16nrt)
+%memnrtcount(nrtsource=Nov16nrtdata, mmyy=Nov16nrt)
+%memnrtcount(nrtsource=Dec16nrtdata, mmyy=Dec16nrt)
+%memnrtcount(nrtsource=Jan17nrtdata, mmyy=Jan17nrt)
+%memnrtcount(nrtsource=Feb17nrtdata, mmyy=Feb17nrt)
+%memnrtcount(nrtsource=Mar17nrtdata, mmyy=Mar17nrt)
+%memnrtcount(nrtsource=Apr17nrtdata, mmyy=Apr17nrt)
+%memnrtcount(nrtsource=May17nrtdata, mmyy=May17nrt)
+%memnrtcount(nrtsource=Jun17nrtdata, mmyy=Jun17nrt)
+%memnrtcount(nrtsource=Jul17nrtdata, mmyy=Jul17nrt)
+%memnrtcount(nrtsource=Aug17nrtdata, mmyy=Aug17nrt)
+%memnrtcount(nrtsource=Sep17nrtdata, mmyy=Sep17nrt)
+%memnrtcount(nrtsource=Oct17nrtdata, mmyy=Oct17nrt)
+%memnrtcount(nrtsource=Nov17nrtdata, mmyy=Nov17nrt)
+%memnrtcount(nrtsource=Dec17nrtdata, mmyy=Dec17nrt)
+%memnrtcount(nrtsource=Jan18nrtdata, mmyy=Jan18nrt)
+%memnrtcount(nrtsource=Feb18nrtdata, mmyy=Feb18nrt)
+%memnrtcount(nrtsource=Mar18nrtdata, mmyy=Mar18nrt)
+%memnrtcount(nrtsource=Apr18nrtdata, mmyy=Apr18nrt)
+%memnrtcount(nrtsource=May18nrtdata, mmyy=May18nrt)
+%memnrtcount(nrtsource=Jun18nrtdata, mmyy=Jun18nrt)
+
+
+/**************************************************************************************************************************
+Number of  NRT Recipients per month BY GROUP 
+****************************************************************************************************************************/
+%macro  memnrtcount(nrtsource= ,mmyy= );
+proc sql;
+	select nrt_cat, count(distinct(unic_member)) as nrt_&mmyy
+		from &nrtsource
+			where &mmyy=1
+				group by nrt_cat; quit;
+%mend memnrtcount;
+%memnrtcount(nrtsource=Jan14nrtdata, mmyy=Jan14nrt)
+%memnrtcount(nrtsource=Feb14nrtdata, mmyy=Feb14nrt)
+%memnrtcount(nrtsource=Mar14nrtdata, mmyy=Mar14nrt)
+%memnrtcount(nrtsource=Apr14nrtdata, mmyy=Apr14nrt)
+%memnrtcount(nrtsource=May14nrtdata, mmyy=May14nrt)
+%memnrtcount(nrtsource=Jun14nrtdata, mmyy=Jun14nrt)
+%memnrtcount(nrtsource=Jul14nrtdata, mmyy=Jul14nrt)
+%memnrtcount(nrtsource=Aug14nrtdata, mmyy=Aug14nrt)
+%memnrtcount(nrtsource=Sep14nrtdata, mmyy=Sep14nrt)
+%memnrtcount(nrtsource=Oct14nrtdata, mmyy=Oct14nrt)
+%memnrtcount(nrtsource=Nov14nrtdata, mmyy=Nov14nrt)
+%memnrtcount(nrtsource=Dec14nrtdata, mmyy=Dec14nrt)
+%memnrtcount(nrtsource=Jan15nrtdata, mmyy=Jan15nrt)
+%memnrtcount(nrtsource=Feb15nrtdata, mmyy=Feb15nrt)
+%memnrtcount(nrtsource=Mar15nrtdata, mmyy=Mar15nrt)
+%memnrtcount(nrtsource=Apr15nrtdata, mmyy=Apr15nrt)
+%memnrtcount(nrtsource=May15nrtdata, mmyy=May15nrt)
+%memnrtcount(nrtsource=Jun15nrtdata, mmyy=Jun15nrt)
+%memnrtcount(nrtsource=Jul15nrtdata, mmyy=Jul15nrt)
+%memnrtcount(nrtsource=Aug15nrtdata, mmyy=Aug15nrt)
+%memnrtcount(nrtsource=Sep15nrtdata, mmyy=Sep15nrt)
+%memnrtcount(nrtsource=Oct15nrtdata, mmyy=Oct15nrt)
+%memnrtcount(nrtsource=Nov15nrtdata, mmyy=Nov15nrt)
+%memnrtcount(nrtsource=Dec15nrtdata, mmyy=Dec15nrt)
+%memnrtcount(nrtsource=Jan16nrtdata, mmyy=Jan16nrt)
+%memnrtcount(nrtsource=Feb16nrtdata, mmyy=Feb16nrt)
+%memnrtcount(nrtsource=Mar16nrtdata, mmyy=Mar16nrt)
+%memnrtcount(nrtsource=Apr16nrtdata, mmyy=Apr16nrt)
+%memnrtcount(nrtsource=May16nrtdata, mmyy=May16nrt)
+%memnrtcount(nrtsource=Jun16nrtdata, mmyy=Jun16nrt)
+%memnrtcount(nrtsource=Jul16nrtdata, mmyy=Jul16nrt)
+%memnrtcount(nrtsource=Aug16nrtdata, mmyy=Aug16nrt)
+%memnrtcount(nrtsource=Sep16nrtdata, mmyy=Sep16nrt)
+%memnrtcount(nrtsource=Oct16nrtdata, mmyy=Oct16nrt)
+%memnrtcount(nrtsource=Nov16nrtdata, mmyy=Nov16nrt)
+%memnrtcount(nrtsource=Dec16nrtdata, mmyy=Dec16nrt)
+%memnrtcount(nrtsource=Jan17nrtdata, mmyy=Jan17nrt)
+%memnrtcount(nrtsource=Feb17nrtdata, mmyy=Feb17nrt)
+%memnrtcount(nrtsource=Mar17nrtdata, mmyy=Mar17nrt)
+%memnrtcount(nrtsource=Apr17nrtdata, mmyy=Apr17nrt)
+%memnrtcount(nrtsource=May17nrtdata, mmyy=May17nrt)
+%memnrtcount(nrtsource=Jun17nrtdata, mmyy=Jun17nrt)
+%memnrtcount(nrtsource=Jul17nrtdata, mmyy=Jul17nrt)
+%memnrtcount(nrtsource=Aug17nrtdata, mmyy=Aug17nrt)
+%memnrtcount(nrtsource=Sep17nrtdata, mmyy=Sep17nrt)
+%memnrtcount(nrtsource=Oct17nrtdata, mmyy=Oct17nrt)
+%memnrtcount(nrtsource=Nov17nrtdata, mmyy=Nov17nrt)
+%memnrtcount(nrtsource=Dec17nrtdata, mmyy=Dec17nrt)
+%memnrtcount(nrtsource=Jan18nrtdata, mmyy=Jan18nrt)
+%memnrtcount(nrtsource=Feb18nrtdata, mmyy=Feb18nrt)
+%memnrtcount(nrtsource=Mar18nrtdata, mmyy=Mar18nrt)
+%memnrtcount(nrtsource=Apr18nrtdata, mmyy=Apr18nrt)
+%memnrtcount(nrtsource=May18nrtdata, mmyy=May18nrt)
+%memnrtcount(nrtsource=Jun18nrtdata, mmyy=Jun18nrt)
+
+
+/***********************************************************************************************************************************
+Counseling data from medical file
+*************************************************************************************************************************************/
+/*data med_counsel (keep=mc001 mc013_year mc055 mc056 mc057 mc057b mc057c mc059 mc137 mc141 mc990_year mc992 mc993);
+	set odbclib.medicalclaim;
+		where mc055 in: ("99406", "99407", "G0375", "G0376", "G0436", "G0437", "G8402", "G8453", "S9075", "S9453", "4000F", "Z716"
+"99401", "99402");
+		/*99406, 99407, G0375, G0376, G0436, G0437, G8402, G8403, G8453, G8454, S4990, S4991, S4995, S9075, S9453, 4000F, and 4001F "4000F","4004F", "4401f", "4001" ,"Z716"*/
+/*run;*/
+
+/*data desc.med_counsel;
+set med_counsel;
+run;*/
+
+proc sql;
+create table med_counsel_ (compress=yes) as
+select*, case 
+when mc055 in ("99406", "99407", "G0375", "G0376", "G0436", "G0437") then "Group1" 
+when mc055 in ("G8402", "G8453", "S9075", "S9453", "4000F", "Z716") then "Group2"
+when mc055 in ("99401", "99402") then "Group3"
+end as csl_cat
+from desc.med_counsel; quit;
+
+data med_counsel_1;
+set med_counsel_;
+keep=0;
+if csl_cat="Group3" and (mc056 = "SE" or mc057= "SE" or mc057b= "SE" or mc057c= "SE") then keep=1;
+if csl_cat="Group1" or csl_cat="Group2" then keep=1;
+if keep=1;
+run;
+
+proc freq data=med_counsel_;
+table csl_cat;run;
+
+/***********************************************************************************************************************************************************
+Merge Enrolment_NRT with Medical/Counsel file
+membernrt_all
+************************************************************************************************************************************************************/
+proc sql;
+	Create table membernrt_med as
+		Select * from desc.mcd_sort_uni as x left join med_counsel_1 as y
+			on x.me107 = y.mc137 and x.me001 = y.mc001;
+Quit;
+
+/*proc freq data=membernrt_med;
+table csl_cat;run;*/
+
+
+/***********************************************************************************************************************************************************
+Create Monthly files
+************************************************************************************************************************************************************/
+proc sql;
+	create table med_counsel2014 (compress=yes) as
+		select*,(2014-mc013_year) as m_age14,
+			case when  mc059>= '01Jan14'd and mc059<= '31Jan14'd then 1 else 0 end as Jan14counsel,
+			case when  mc059>= '01Feb14'd and mc059<= '28Feb14'd then 1 else 0 end as Feb14counsel,
+			case when  mc059>= '01Mar14'd and mc059<= '31Mar14'd then 1 else 0 end as Mar14counsel,
+			case when  mc059>= '01Apr14'd and mc059<= '30Apr14'd then 1 else 0 end as Apr14counsel,
+			case when  mc059>= '01May14'd and mc059<= '31May14'd then 1 else 0 end as May14counsel,
+			case when  mc059>= '01Jun14'd and mc059<= '30Jun14'd then 1 else 0 end as Jun14counsel,
+			case when  mc059>= '01Jul14'd and mc059<= '31Jul14'd then 1 else 0 end as Jul14counsel,
+			case when  mc059>= '01Aug14'd and mc059<= '31Aug14'd then 1 else 0 end as Aug14counsel,
+			case when  mc059>= '01Sep14'd and mc059<= '30Sep14'd then 1 else 0 end as Sep14counsel,
+			case when  mc059>= '01Oct14'd and mc059<= '31Oct14'd then 1 else 0 end as Oct14counsel,
+			case when  mc059>= '01Nov14'd and mc059<= '30Nov14'd then 1 else 0 end as Nov14counsel,
+			case when  mc059>= '01Dec14'd and mc059<= '31Dec14'd then 1 else 0 end as Dec14counsel
+			from membernrt_med;
+quit;
+
+proc sql;
+	create table med_counsel2015 (compress=yes) as
+		select*,(2015-mc013_year) as m_age15,
+			case when  mc059>= '01Jan15'd and mc059<= '31Jan15'd then 1 else 0 end as Jan15counsel,
+			case when  mc059>= '01Feb15'd and mc059<= '28Feb15'd then 1 else 0 end as Feb15counsel,
+			case when  mc059>= '01Mar15'd and mc059<= '31Mar15'd then 1 else 0 end as Mar15counsel,
+			case when  mc059>= '01Apr15'd and mc059<= '30Apr15'd then 1 else 0 end as Apr15counsel,
+			case when  mc059>= '01May15'd and mc059<= '31May15'd then 1 else 0 end as May15counsel,
+			case when  mc059>= '01Jun15'd and mc059<= '30Jun15'd then 1 else 0 end as Jun15counsel,
+			case when  mc059>= '01Jul15'd and mc059<= '31Jul15'd then 1 else 0 end as Jul15counsel,
+			case when  mc059>= '01Aug15'd and mc059<= '31Aug15'd then 1 else 0 end as Aug15counsel,
+			case when  mc059>= '01Sep15'd and mc059<= '30Sep15'd then 1 else 0 end as Sep15counsel,
+			case when  mc059>= '01Oct15'd and mc059<= '31Oct15'd then 1 else 0 end as Oct15counsel,
+			case when  mc059>= '01Nov15'd and mc059<= '30Nov15'd then 1 else 0 end as Nov15counsel,
+			case when  mc059>= '01Dec15'd and mc059<= '31Dec15'd then 1 else 0 end as Dec15counsel
+			from membernrt_med;
+quit;
+
+proc sql;
+	create table med_counsel2016 (compress=yes) as
+		select*,(2016-mc013_year) as m_age16,
+			case when  mc059>= '01Jan16'd and mc059<= '31Jan16'd then 1 else 0 end as Jan16counsel,
+			case when  mc059>= '01Feb16'd and mc059<= '29Feb16'd then 1 else 0 end as Feb16counsel,
+			case when  mc059>= '01Mar16'd and mc059<= '31Mar16'd then 1 else 0 end as Mar16counsel,
+			case when  mc059>= '01Apr16'd and mc059<= '30Apr16'd then 1 else 0 end as Apr16counsel,
+			case when  mc059>= '01May16'd and mc059<= '31May16'd then 1 else 0 end as May16counsel,
+			case when  mc059>= '01Jun16'd and mc059<= '30Jun16'd then 1 else 0 end as Jun16counsel,
+			case when  mc059>= '01Jul16'd and mc059<= '31Jul16'd then 1 else 0 end as Jul16counsel,
+			case when  mc059>= '01Aug16'd and mc059<= '31Aug16'd then 1 else 0 end as Aug16counsel,
+			case when  mc059>= '01Sep16'd and mc059<= '30Sep16'd then 1 else 0 end as Sep16counsel,
+			case when  mc059>= '01Oct16'd and mc059<= '31Oct16'd then 1 else 0 end as Oct16counsel,
+			case when  mc059>= '01Nov16'd and mc059<= '30Nov16'd then 1 else 0 end as Nov16counsel,
+			case when  mc059>= '01Dec16'd and mc059<= '31Dec16'd then 1 else 0 end as Dec16counsel
+			from membernrt_med;
+quit;
+
+proc sql;
+	create table med_counsel2017 (compress=yes) as
+		select*,(2017-mc013_year) as m_age17,
+			case when  mc059>= '01Jan17'd and mc059<= '31Jan17'd then 1 else 0 end as Jan17counsel,
+			case when  mc059>= '01Feb17'd and mc059<= '28Feb17'd then 1 else 0 end as Feb17counsel,
+			case when  mc059>= '01Mar17'd and mc059<= '31Mar17'd then 1 else 0 end as Mar17counsel,
+			case when  mc059>= '01Apr17'd and mc059<= '30Apr17'd then 1 else 0 end as Apr17counsel,
+			case when  mc059>= '01May17'd and mc059<= '31May17'd then 1 else 0 end as May17counsel,
+			case when  mc059>= '01Jun17'd and mc059<= '30Jun17'd then 1 else 0 end as Jun17counsel,
+			case when  mc059>= '01Jul17'd and mc059<= '31Jul17'd then 1 else 0 end as Jul17counsel,
+			case when  mc059>= '01Aug17'd and mc059<= '31Aug17'd then 1 else 0 end as Aug17counsel,
+			case when  mc059>= '01Sep17'd and mc059<= '30Sep17'd then 1 else 0 end as Sep17counsel,
+			case when  mc059>= '01Oct17'd and mc059<= '31Oct17'd then 1 else 0 end as Oct17counsel,
+			case when  mc059>= '01Nov17'd and mc059<= '30Nov17'd then 1 else 0 end as Nov17counsel,
+			case when  mc059>= '01Dec17'd and mc059<= '31Dec17'd then 1 else 0 end as Dec17counsel
+			from membernrt_med;
+quit;
+
+proc sql;
+	create table med_counsel2018 (compress=yes) as
+		select*,(2018-mc013_year) as m_age18,
+			case when  mc059>= '01Jan18'd and mc059<= '31Jan18'd then 1 else 0 end as Jan18counsel,
+			case when  mc059>= '01Feb18'd and mc059<= '28Feb18'd then 1 else 0 end as Feb18counsel,
+			case when  mc059>= '01Mar18'd and mc059<= '31Mar18'd then 1 else 0 end as Mar18counsel,
+			case when  mc059>= '01Apr18'd and mc059<= '30Apr18'd then 1 else 0 end as Apr18counsel,
+			case when  mc059>= '01May18'd and mc059<= '31May18'd then 1 else 0 end as May18counsel,
+			case when  mc059>= '01Jun18'd and mc059<= '30Jun18'd then 1 else 0 end as Jun18counsel
+			from membernrt_med;
+quit;
+
+/******************************************************************************************************************************************
+Restrict sample to persons of age between 18 and 64 years using the age variables created in the previous 
+data steps
+******************************************************************************************************************************************/
+
+proc sql;
+	create table med_counsel_2014 as
+		select*
+			from med_counsel2014
+				where 18<=m_age14<=64;
+	create table med_counsel_2015 as
+		select*
+			from med_counsel2015
+				where 18<=m_age15<=64;
+	create table med_counsel_2016 as
+		select*
+			from med_counsel2016
+				where 18<=m_age16<=64;
+	create table med_counsel_2017 as
+		select*
+			from med_counsel2017
+				where 18<=m_age17<=64;
+	create table med_counsel_2018 as
+		select*
+			from med_counsel2018
+				where 18<=m_age18<=64;
+quit;
+
+/**************************************************************************************************************************************************************
+Disaggregate annual counseling data into months with the aim of merging with monthly member files
+****************************************************************************************************************************************************************/
+proc options option= macro; run;
+%macro med_counsel(source= ,counsel= ,mnth= );
+proc sql;
+	create table &counsel as 
+		select*
+			from &source
+				where &mnth=1;
+					quit;
+%mend med_counsel;
+%med_counsel(source=med_counsel2014, counsel= Jan14csl, mnth=Jan14counsel)
+%med_counsel(source=med_counsel2014, counsel= Feb14csl, mnth=Feb14counsel)
+%med_counsel(source=med_counsel2014, counsel= Mar14csl, mnth=Mar14counsel)
+%med_counsel(source=med_counsel2014, counsel= Apr14csl, mnth=Apr14counsel)
+%med_counsel(source=med_counsel2014, counsel= May14csl, mnth=May14counsel)
+%med_counsel(source=med_counsel2014, counsel= Jun14csl, mnth=Jun14counsel)
+%med_counsel(source=med_counsel2014, counsel= Jul14csl, mnth=Jul14counsel)
+%med_counsel(source=med_counsel2014, counsel= Aug14csl, mnth=Aug14counsel)
+%med_counsel(source=med_counsel2014, counsel= Sep14csl, mnth=Sep14counsel)
+%med_counsel(source=med_counsel2014, counsel= Oct14csl, mnth=Oct14counsel)
+%med_counsel(source=med_counsel2014, counsel= Nov14csl, mnth=Nov14counsel)
+%med_counsel(source=med_counsel2014, counsel= Dec14csl, mnth=Dec14counsel)
+%med_counsel(source=med_counsel2015, counsel= Jan15csl, mnth=Jan15counsel)
+%med_counsel(source=med_counsel2015, counsel= Feb15csl, mnth=Feb15counsel)
+%med_counsel(source=med_counsel2015, counsel= Mar15csl, mnth=Mar15counsel)
+%med_counsel(source=med_counsel2015, counsel= Apr15csl, mnth=Apr15counsel)
+%med_counsel(source=med_counsel2015, counsel= May15csl, mnth=May15counsel)
+%med_counsel(source=med_counsel2015, counsel= Jun15csl, mnth=Jun15counsel)
+%med_counsel(source=med_counsel2015, counsel= Jul15csl, mnth=Jul15counsel)
+%med_counsel(source=med_counsel2015, counsel= Aug15csl, mnth=Aug15counsel)
+%med_counsel(source=med_counsel2015, counsel= Sep15csl, mnth=Sep15counsel)
+%med_counsel(source=med_counsel2015, counsel= Oct15csl, mnth=Oct15counsel)
+%med_counsel(source=med_counsel2015, counsel= Nov15csl, mnth=Nov15counsel)
+%med_counsel(source=med_counsel2015, counsel= Dec15csl, mnth=Dec15counsel)
+%med_counsel(source=med_counsel2016, counsel= Jan16csl, mnth=Jan16counsel)
+%med_counsel(source=med_counsel2016, counsel= Feb16csl, mnth=Feb16counsel)
+%med_counsel(source=med_counsel2016, counsel= Mar16csl, mnth=Mar16counsel)
+%med_counsel(source=med_counsel2016, counsel= Apr16csl, mnth=Apr16counsel)
+%med_counsel(source=med_counsel2016, counsel= May16csl, mnth=May16counsel)
+%med_counsel(source=med_counsel2016, counsel= Jun16csl, mnth=Jun16counsel)
+%med_counsel(source=med_counsel2016, counsel= Jul16csl, mnth=Jul16counsel)
+%med_counsel(source=med_counsel2016, counsel= Aug16csl, mnth=Aug16counsel)
+%med_counsel(source=med_counsel2016, counsel= Sep16csl, mnth=Sep16counsel)
+%med_counsel(source=med_counsel2016, counsel= Oct16csl, mnth=Oct16counsel)
+%med_counsel(source=med_counsel2016, counsel= Nov16csl, mnth=Nov16counsel)
+%med_counsel(source=med_counsel2016, counsel= Dec16csl, mnth=Dec16counsel)
+%med_counsel(source=med_counsel2017, counsel= Jan17csl, mnth=Jan17counsel)
+%med_counsel(source=med_counsel2017, counsel= Feb17csl, mnth=Feb17counsel)
+%med_counsel(source=med_counsel2017, counsel= Mar17csl, mnth=Mar17counsel)
+%med_counsel(source=med_counsel2017, counsel= Apr17csl, mnth=Apr17counsel)
+%med_counsel(source=med_counsel2017, counsel= May17csl, mnth=May17counsel)
+%med_counsel(source=med_counsel2017, counsel= Jun17csl, mnth=Jun17counsel)
+%med_counsel(source=med_counsel2017, counsel= Jul17csl, mnth=Jul17counsel)
+%med_counsel(source=med_counsel2017, counsel= Aug17csl, mnth=Aug17counsel)
+%med_counsel(source=med_counsel2017, counsel= Sep17csl, mnth=Sep17counsel)
+%med_counsel(source=med_counsel2017, counsel= Oct17csl, mnth=Oct17counsel)
+%med_counsel(source=med_counsel2017, counsel= Nov17csl, mnth=Nov17counsel)
+%med_counsel(source=med_counsel2017, counsel= Dec17csl, mnth=Dec17counsel)
+%med_counsel(source=med_counsel2018, counsel= Jan18csl, mnth=Jan18counsel)
+%med_counsel(source=med_counsel2018, counsel= Feb18csl, mnth=Feb18counsel)
+%med_counsel(source=med_counsel2018, counsel= Mar18csl, mnth=Mar18counsel)
+%med_counsel(source=med_counsel2018, counsel= Apr18csl, mnth=Apr18counsel)
+%med_counsel(source=med_counsel2018, counsel= May18csl, mnth=May18counsel)
+%med_counsel(source=med_counsel2018, counsel= Jun18csl, mnth=Jun18counsel)
+
+
+/*************************************************************************************************************************************************
+Counseling provided by type
+**************************************************************************************************************************************************/
+/*proc freq data=membernrt_all;
+	table nrt_cat;
+		where medicaidoriginal=1;
+			title "NRT Distributed by Category for Traditional Medicaid";
+run;*/
+/*************************************************************************************************************************************************
+Count counselling claims in each month
+**************************************************************************************************************************************************/
+%macro medicouns(datasource= , period= ,agg= );
+proc sql;
+	select count(unic_member) as &agg
+		from &datasource
+			where &period =1 & csl_cat ne " " ;
+				quit;
+				title "Monthly Counseling_Claims";
+%mend medicouns;
+%medicouns(datasource= Jan14csl, period=Jan14counsel , agg=Jan14cslsum)
+%medicouns(datasource= Feb14csl, period=Feb14counsel , agg=Feb14cslsum)
+%medicouns(datasource= Mar14csl, period=Mar14counsel , agg=Mar14cslsum)
+%medicouns(datasource= Apr14csl, period=Apr14counsel , agg=Apr14cslsum)
+%medicouns(datasource= May14csl, period=May14counsel , agg=May14cslsum)
+%medicouns(datasource= Jun14csl, period=Jun14counsel , agg=Jun14cslsum)
+%medicouns(datasource= Jul14csl, period=Jul14counsel , agg=Jul14cslsum)
+%medicouns(datasource= Aug14csl, period=Aug14counsel , agg=Aug14cslsum)
+%medicouns(datasource= Sep14csl, period=Sep14counsel , agg=Sep14cslsum)
+%medicouns(datasource= Oct14csl, period=Oct14counsel , agg=Oct14cslsum)
+%medicouns(datasource= Nov14csl, period=Nov14counsel , agg=Nov14cslsum)
+%medicouns(datasource= Dec14csl, period=Dec14counsel , agg=Dec14cslsum)
+%medicouns(datasource= Jan15csl, period=Jan15counsel , agg=Jan15cslsum)
+%medicouns(datasource= Feb15csl, period=Feb15counsel , agg=Feb15cslsum)
+%medicouns(datasource= Mar15csl, period=Mar15counsel , agg=Mar15cslsum)
+%medicouns(datasource= Apr15csl, period=Apr15counsel , agg=Apr15cslsum)
+%medicouns(datasource= May15csl, period=May15counsel , agg=May15cslsum)
+%medicouns(datasource= Jun15csl, period=Jun15counsel , agg=Jun15cslsum)
+%medicouns(datasource= Jul15csl, period=Jul15counsel , agg=Jul15cslsum)
+%medicouns(datasource= Aug15csl, period=Aug15counsel , agg=Aug15cslsum)
+%medicouns(datasource= Sep15csl, period=Sep15counsel , agg=Sep15cslsum)
+%medicouns(datasource= Oct15csl, period=Oct15counsel , agg=Oct15cslsum)
+%medicouns(datasource= Nov15csl, period=Nov15counsel , agg=Nov15cslsum)
+%medicouns(datasource= Dec15csl, period=Dec15counsel , agg=Dec15cslsum)
+%medicouns(datasource= Jan16csl, period=Jan16counsel , agg=Jan16cslsum)
+%medicouns(datasource= Feb16csl, period=Feb16counsel , agg=Feb16cslsum)
+%medicouns(datasource= Mar16csl, period=Mar16counsel , agg=Mar16cslsum)
+%medicouns(datasource= Apr16csl, period=Apr16counsel , agg=Apr16cslsum)
+%medicouns(datasource= May16csl, period=May16counsel , agg=May16cslsum)
+%medicouns(datasource= Jun16csl, period=Jun16counsel , agg=Jun16cslsum)
+%medicouns(datasource= Jul16csl, period=Jul16counsel , agg=Jul16cslsum)
+%medicouns(datasource= Aug16csl, period=Aug16counsel , agg=Aug16cslsum)
+%medicouns(datasource= Sep16csl, period=Sep16counsel , agg=Sep16cslsum)
+%medicouns(datasource= Oct16csl, period=Oct16counsel , agg=Oct16cslsum)
+%medicouns(datasource= Nov16csl, period=Nov16counsel , agg=Nov16cslsum)
+%medicouns(datasource= Dec16csl, period=Dec16counsel , agg=Dec16cslsum)
+%medicouns(datasource= Jan17csl, period=Jan17counsel , agg=Jan17cslsum)
+%medicouns(datasource= Feb17csl, period=Feb17counsel , agg=Feb17cslsum)
+%medicouns(datasource= Mar17csl, period=Mar17counsel , agg=Mar17cslsum)
+%medicouns(datasource= Apr17csl, period=Apr17counsel , agg=Apr17cslsum)
+%medicouns(datasource= May17csl, period=May17counsel , agg=May17cslsum)
+%medicouns(datasource= Jun17csl, period=Jun17counsel , agg=Jun17cslsum)
+%medicouns(datasource= Jul17csl, period=Jul17counsel , agg=Jul17cslsum)
+%medicouns(datasource= Aug17csl, period=Aug17counsel , agg=Aug17cslsum)
+%medicouns(datasource= Sep17csl, period=Sep17counsel , agg=Sep17cslsum)
+%medicouns(datasource= Oct17csl, period=Oct17counsel , agg=Oct17cslsum)
+%medicouns(datasource= Nov17csl, period=Nov17counsel , agg=Nov17cslsum)
+%medicouns(datasource= Dec17csl, period=Dec17counsel , agg=Dec17cslsum)
+%medicouns(datasource= Jan18csl, period=Jan18counsel , agg=Jan18cslsum)
+%medicouns(datasource= Feb18csl, period=Feb18counsel , agg=Feb18cslsum)
+%medicouns(datasource= Mar18csl, period=Mar18counsel , agg=Mar18cslsum)
+%medicouns(datasource= Apr18csl, period=Apr18counsel , agg=Apr18cslsum)
+%medicouns(datasource= May18csl, period=May18counsel , agg=May18cslsum)
+%medicouns(datasource= Jun18csl, period=Jun18counsel , agg=Jun18cslsum)
+
+/*************************************************************************************************************************************************
+Count counselling claims by CSL type in each month
+**************************************************************************************************************************************************/
+
+%macro medicouns(datasource= , period= ,agg= );
+proc sql;
+	select csl_cat, count(unic_member) as &agg
+		from &datasource
+			where &period =1 group by csl_cat;
+				quit;
+				title "Monthly Counseling_Claims_By_Type";
+%mend medicouns;
+%medicouns(datasource= Jan14csl, period=Jan14counsel , agg=Jan14cslsum)
+%medicouns(datasource= Feb14csl, period=Feb14counsel , agg=Feb14cslsum)
+%medicouns(datasource= Mar14csl, period=Mar14counsel , agg=Mar14cslsum)
+%medicouns(datasource= Apr14csl, period=Apr14counsel , agg=Apr14cslsum)
+%medicouns(datasource= May14csl, period=May14counsel , agg=May14cslsum)
+%medicouns(datasource= Jun14csl, period=Jun14counsel , agg=Jun14cslsum)
+%medicouns(datasource= Jul14csl, period=Jul14counsel , agg=Jul14cslsum)
+%medicouns(datasource= Aug14csl, period=Aug14counsel , agg=Aug14cslsum)
+%medicouns(datasource= Sep14csl, period=Sep14counsel , agg=Sep14cslsum)
+%medicouns(datasource= Oct14csl, period=Oct14counsel , agg=Oct14cslsum)
+%medicouns(datasource= Nov14csl, period=Nov14counsel , agg=Nov14cslsum)
+%medicouns(datasource= Dec14csl, period=Dec14counsel , agg=Dec14cslsum)
+%medicouns(datasource= Jan15csl, period=Jan15counsel , agg=Jan15cslsum)
+%medicouns(datasource= Feb15csl, period=Feb15counsel , agg=Feb15cslsum)
+%medicouns(datasource= Mar15csl, period=Mar15counsel , agg=Mar15cslsum)
+%medicouns(datasource= Apr15csl, period=Apr15counsel , agg=Apr15cslsum)
+%medicouns(datasource= May15csl, period=May15counsel , agg=May15cslsum)
+%medicouns(datasource= Jun15csl, period=Jun15counsel , agg=Jun15cslsum)
+%medicouns(datasource= Jul15csl, period=Jul15counsel , agg=Jul15cslsum)
+%medicouns(datasource= Aug15csl, period=Aug15counsel , agg=Aug15cslsum)
+%medicouns(datasource= Sep15csl, period=Sep15counsel , agg=Sep15cslsum)
+%medicouns(datasource= Oct15csl, period=Oct15counsel , agg=Oct15cslsum)
+%medicouns(datasource= Nov15csl, period=Nov15counsel , agg=Nov15cslsum)
+%medicouns(datasource= Dec15csl, period=Dec15counsel , agg=Dec15cslsum)
+%medicouns(datasource= Jan16csl, period=Jan16counsel , agg=Jan16cslsum)
+%medicouns(datasource= Feb16csl, period=Feb16counsel , agg=Feb16cslsum)
+%medicouns(datasource= Mar16csl, period=Mar16counsel , agg=Mar16cslsum)
+%medicouns(datasource= Apr16csl, period=Apr16counsel , agg=Apr16cslsum)
+%medicouns(datasource= May16csl, period=May16counsel , agg=May16cslsum)
+%medicouns(datasource= Jun16csl, period=Jun16counsel , agg=Jun16cslsum)
+%medicouns(datasource= Jul16csl, period=Jul16counsel , agg=Jul16cslsum)
+%medicouns(datasource= Aug16csl, period=Aug16counsel , agg=Aug16cslsum)
+%medicouns(datasource= Sep16csl, period=Sep16counsel , agg=Sep16cslsum)
+%medicouns(datasource= Oct16csl, period=Oct16counsel , agg=Oct16cslsum)
+%medicouns(datasource= Nov16csl, period=Nov16counsel , agg=Nov16cslsum)
+%medicouns(datasource= Dec16csl, period=Dec16counsel , agg=Dec16cslsum)
+%medicouns(datasource= Jan17csl, period=Jan17counsel , agg=Jan17cslsum)
+%medicouns(datasource= Feb17csl, period=Feb17counsel , agg=Feb17cslsum)
+%medicouns(datasource= Mar17csl, period=Mar17counsel , agg=Mar17cslsum)
+%medicouns(datasource= Apr17csl, period=Apr17counsel , agg=Apr17cslsum)
+%medicouns(datasource= May17csl, period=May17counsel , agg=May17cslsum)
+%medicouns(datasource= Jun17csl, period=Jun17counsel , agg=Jun17cslsum)
+%medicouns(datasource= Jul17csl, period=Jul17counsel , agg=Jul17cslsum)
+%medicouns(datasource= Aug17csl, period=Aug17counsel , agg=Aug17cslsum)
+%medicouns(datasource= Sep17csl, period=Sep17counsel , agg=Sep17cslsum)
+%medicouns(datasource= Oct17csl, period=Oct17counsel , agg=Oct17cslsum)
+%medicouns(datasource= Nov17csl, period=Nov17counsel , agg=Nov17cslsum)
+%medicouns(datasource= Dec17csl, period=Dec17counsel , agg=Dec17cslsum)
+%medicouns(datasource= Jan18csl, period=Jan18counsel , agg=Jan18cslsum)
+%medicouns(datasource= Feb18csl, period=Feb18counsel , agg=Feb18cslsum)
+%medicouns(datasource= Mar18csl, period=Mar18counsel , agg=Mar18cslsum)
+%medicouns(datasource= Apr18csl, period=Apr18counsel , agg=Apr18cslsum)
+%medicouns(datasource= May18csl, period=May18counsel , agg=May18cslsum)
+%medicouns(datasource= Jun18csl, period=Jun18counsel , agg=Jun18cslsum)
+
+/*************************************************************************************************************************************************
+Count unique counselling recipients in each month
+**************************************************************************************************************************************************/
+%macro medicouns(datasource= , period= ,agg= );
+proc sql;
+	select count(distinct(unic_member)) as &agg
+		from &datasource
+			where &period =1 & csl_cat ne " ";
+				quit;
+						title "Monthly Counseling_Recipients";
+%mend medicouns;
+%medicouns(datasource= Jan14csl, period=Jan14counsel , agg=Jan14cslsum)
+%medicouns(datasource= Feb14csl, period=Feb14counsel , agg=Feb14cslsum)
+%medicouns(datasource= Mar14csl, period=Mar14counsel , agg=Mar14cslsum)
+%medicouns(datasource= Apr14csl, period=Apr14counsel , agg=Apr14cslsum)
+%medicouns(datasource= May14csl, period=May14counsel , agg=May14cslsum)
+%medicouns(datasource= Jun14csl, period=Jun14counsel , agg=Jun14cslsum)
+%medicouns(datasource= Jul14csl, period=Jul14counsel , agg=Jul14cslsum)
+%medicouns(datasource= Aug14csl, period=Aug14counsel , agg=Aug14cslsum)
+%medicouns(datasource= Sep14csl, period=Sep14counsel , agg=Sep14cslsum)
+%medicouns(datasource= Oct14csl, period=Oct14counsel , agg=Oct14cslsum)
+%medicouns(datasource= Nov14csl, period=Nov14counsel , agg=Nov14cslsum)
+%medicouns(datasource= Dec14csl, period=Dec14counsel , agg=Dec14cslsum)
+%medicouns(datasource= Jan15csl, period=Jan15counsel , agg=Jan15cslsum)
+%medicouns(datasource= Feb15csl, period=Feb15counsel , agg=Feb15cslsum)
+%medicouns(datasource= Mar15csl, period=Mar15counsel , agg=Mar15cslsum)
+%medicouns(datasource= Apr15csl, period=Apr15counsel , agg=Apr15cslsum)
+%medicouns(datasource= May15csl, period=May15counsel , agg=May15cslsum)
+%medicouns(datasource= Jun15csl, period=Jun15counsel , agg=Jun15cslsum)
+%medicouns(datasource= Jul15csl, period=Jul15counsel , agg=Jul15cslsum)
+%medicouns(datasource= Aug15csl, period=Aug15counsel , agg=Aug15cslsum)
+%medicouns(datasource= Sep15csl, period=Sep15counsel , agg=Sep15cslsum)
+%medicouns(datasource= Oct15csl, period=Oct15counsel , agg=Oct15cslsum)
+%medicouns(datasource= Nov15csl, period=Nov15counsel , agg=Nov15cslsum)
+%medicouns(datasource= Dec15csl, period=Dec15counsel , agg=Dec15cslsum)
+%medicouns(datasource= Jan16csl, period=Jan16counsel , agg=Jan16cslsum)
+%medicouns(datasource= Feb16csl, period=Feb16counsel , agg=Feb16cslsum)
+%medicouns(datasource= Mar16csl, period=Mar16counsel , agg=Mar16cslsum)
+%medicouns(datasource= Apr16csl, period=Apr16counsel , agg=Apr16cslsum)
+%medicouns(datasource= May16csl, period=May16counsel , agg=May16cslsum)
+%medicouns(datasource= Jun16csl, period=Jun16counsel , agg=Jun16cslsum)
+%medicouns(datasource= Jul16csl, period=Jul16counsel , agg=Jul16cslsum)
+%medicouns(datasource= Aug16csl, period=Aug16counsel , agg=Aug16cslsum)
+%medicouns(datasource= Sep16csl, period=Sep16counsel , agg=Sep16cslsum)
+%medicouns(datasource= Oct16csl, period=Oct16counsel , agg=Oct16cslsum)
+%medicouns(datasource= Nov16csl, period=Nov16counsel , agg=Nov16cslsum)
+%medicouns(datasource= Dec16csl, period=Dec16counsel , agg=Dec16cslsum)
+%medicouns(datasource= Jan17csl, period=Jan17counsel , agg=Jan17cslsum)
+%medicouns(datasource= Feb17csl, period=Feb17counsel , agg=Feb17cslsum)
+%medicouns(datasource= Mar17csl, period=Mar17counsel , agg=Mar17cslsum)
+%medicouns(datasource= Apr17csl, period=Apr17counsel , agg=Apr17cslsum)
+%medicouns(datasource= May17csl, period=May17counsel , agg=May17cslsum)
+%medicouns(datasource= Jun17csl, period=Jun17counsel , agg=Jun17cslsum)
+%medicouns(datasource= Jul17csl, period=Jul17counsel , agg=Jul17cslsum)
+%medicouns(datasource= Aug17csl, period=Aug17counsel , agg=Aug17cslsum)
+%medicouns(datasource= Sep17csl, period=Sep17counsel , agg=Sep17cslsum)
+%medicouns(datasource= Oct17csl, period=Oct17counsel , agg=Oct17cslsum)
+%medicouns(datasource= Nov17csl, period=Nov17counsel , agg=Nov17cslsum)
+%medicouns(datasource= Dec17csl, period=Dec17counsel , agg=Dec17cslsum)
+%medicouns(datasource= Jan18csl, period=Jan18counsel , agg=Jan18cslsum)
+%medicouns(datasource= Feb18csl, period=Feb18counsel , agg=Feb18cslsum)
+%medicouns(datasource= Mar18csl, period=Mar18counsel , agg=Mar18cslsum)
+%medicouns(datasource= Apr18csl, period=Apr18counsel , agg=Apr18cslsum)
+%medicouns(datasource= May18csl, period=May18counsel , agg=May18cslsum)
+%medicouns(datasource= Jun18csl, period=Jun18counsel , agg=Jun18cslsum)
+
+/*************************************************************************************************************************************************
+Count unique persons who received counselling in each month BY GROUP
+**************************************************************************************************************************************************/
+%macro medicouns(datasource= , period= ,agg= );
+proc sql;
+	select csl_cat, count(distinct(unic_member)) as &agg
+		from &datasource
+			where &period =1 & medicaidexpansion=1
+				group by csl_cat; quit;
+				title "Monthly Counseling_Group_Recipients";
+%mend medicouns;
+%medicouns(datasource= Jan14csl, period=Jan14counsel , agg=Jan14cslsum)
+%medicouns(datasource= Feb14csl, period=Feb14counsel , agg=Feb14cslsum)
+%medicouns(datasource= Mar14csl, period=Mar14counsel , agg=Mar14cslsum)
+%medicouns(datasource= Apr14csl, period=Apr14counsel , agg=Apr14cslsum)
+%medicouns(datasource= May14csl, period=May14counsel , agg=May14cslsum)
+%medicouns(datasource= Jun14csl, period=Jun14counsel , agg=Jun14cslsum)
+%medicouns(datasource= Jul14csl, period=Jul14counsel , agg=Jul14cslsum)
+%medicouns(datasource= Aug14csl, period=Aug14counsel , agg=Aug14cslsum)
+%medicouns(datasource= Sep14csl, period=Sep14counsel , agg=Sep14cslsum)
+%medicouns(datasource= Oct14csl, period=Oct14counsel , agg=Oct14cslsum)
+%medicouns(datasource= Nov14csl, period=Nov14counsel , agg=Nov14cslsum)
+%medicouns(datasource= Dec14csl, period=Dec14counsel , agg=Dec14cslsum)
+%medicouns(datasource= Jan15csl, period=Jan15counsel , agg=Jan15cslsum)
+%medicouns(datasource= Feb15csl, period=Feb15counsel , agg=Feb15cslsum)
+%medicouns(datasource= Mar15csl, period=Mar15counsel , agg=Mar15cslsum)
+%medicouns(datasource= Apr15csl, period=Apr15counsel , agg=Apr15cslsum)
+%medicouns(datasource= May15csl, period=May15counsel , agg=May15cslsum)
+%medicouns(datasource= Jun15csl, period=Jun15counsel , agg=Jun15cslsum)
+%medicouns(datasource= Jul15csl, period=Jul15counsel , agg=Jul15cslsum)
+%medicouns(datasource= Aug15csl, period=Aug15counsel , agg=Aug15cslsum)
+%medicouns(datasource= Sep15csl, period=Sep15counsel , agg=Sep15cslsum)
+%medicouns(datasource= Oct15csl, period=Oct15counsel , agg=Oct15cslsum)
+%medicouns(datasource= Nov15csl, period=Nov15counsel , agg=Nov15cslsum)
+%medicouns(datasource= Dec15csl, period=Dec15counsel , agg=Dec15cslsum)
+%medicouns(datasource= Jan16csl, period=Jan16counsel , agg=Jan16cslsum)
+%medicouns(datasource= Feb16csl, period=Feb16counsel , agg=Feb16cslsum)
+%medicouns(datasource= Mar16csl, period=Mar16counsel , agg=Mar16cslsum)
+%medicouns(datasource= Apr16csl, period=Apr16counsel , agg=Apr16cslsum)
+%medicouns(datasource= May16csl, period=May16counsel , agg=May16cslsum)
+%medicouns(datasource= Jun16csl, period=Jun16counsel , agg=Jun16cslsum)
+%medicouns(datasource= Jul16csl, period=Jul16counsel , agg=Jul16cslsum)
+%medicouns(datasource= Aug16csl, period=Aug16counsel , agg=Aug16cslsum)
+%medicouns(datasource= Sep16csl, period=Sep16counsel , agg=Sep16cslsum)
+%medicouns(datasource= Oct16csl, period=Oct16counsel , agg=Oct16cslsum)
+%medicouns(datasource= Nov16csl, period=Nov16counsel , agg=Nov16cslsum)
+%medicouns(datasource= Dec16csl, period=Dec16counsel , agg=Dec16cslsum)
+%medicouns(datasource= Jan17csl, period=Jan17counsel , agg=Jan17cslsum)
+%medicouns(datasource= Feb17csl, period=Feb17counsel , agg=Feb17cslsum)
+%medicouns(datasource= Mar17csl, period=Mar17counsel , agg=Mar17cslsum)
+%medicouns(datasource= Apr17csl, period=Apr17counsel , agg=Apr17cslsum)
+%medicouns(datasource= May17csl, period=May17counsel , agg=May17cslsum)
+%medicouns(datasource= Jun17csl, period=Jun17counsel , agg=Jun17cslsum)
+%medicouns(datasource= Jul17csl, period=Jul17counsel , agg=Jul17cslsum)
+%medicouns(datasource= Aug17csl, period=Aug17counsel , agg=Aug17cslsum)
+%medicouns(datasource= Sep17csl, period=Sep17counsel , agg=Sep17cslsum)
+%medicouns(datasource= Oct17csl, period=Oct17counsel , agg=Oct17cslsum)
+%medicouns(datasource= Nov17csl, period=Nov17counsel , agg=Nov17cslsum)
+%medicouns(datasource= Dec17csl, period=Dec17counsel , agg=Dec17cslsum)
+%medicouns(datasource= Jan18csl, period=Jan18counsel , agg=Jan18cslsum)
+%medicouns(datasource= Feb18csl, period=Feb18counsel , agg=Feb18cslsum)
+%medicouns(datasource= Mar18csl, period=Mar18counsel , agg=Mar18cslsum)
+%medicouns(datasource= Apr18csl, period=Apr18counsel , agg=Apr18cslsum)
+%medicouns(datasource= May18csl, period=May18counsel , agg=May18cslsum)
+%medicouns(datasource= Jun18csl, period=Jun18counsel , agg=Jun18cslsum)
+
+
+/*************************************************************************************************************************************************
+Count unique persons who received counselling and NRT per month
+
+Step 1: Do inner join for NRT and Counseling per month
+Step 1: Count the unic persons in the merged data
+**************************************************************************************************************************************************/
+
+%macro counsnrt(source1= , source2= ,out= );
+proc sql;
+create table &out as
+	Select *
+		from &source1 as x inner join &source2 as y
+		on x.unic_member = y.unic_member;
+Quit;
+%mend counsnrt;
+%counsnrt(source1=Jan14nrtdata, source2=Jan14csl, out=nrt_cls_Jan14)
+%counsnrt(source1=Feb14nrtdata, source2=Feb14csl, out=nrt_cls_Feb14)
+%counsnrt(source1=Mar14nrtdata, source2=Mar14csl, out=nrt_cls_Mar14)
+%counsnrt(source1=Apr14nrtdata, source2=Apr14csl, out=nrt_cls_Apr14)
+%counsnrt(source1=May14nrtdata, source2=May14csl, out=nrt_cls_May14)
+%counsnrt(source1=Jun14nrtdata, source2=Jun14csl, out=nrt_cls_Jun14)
+%counsnrt(source1=Jul14nrtdata, source2=Jul14csl, out=nrt_cls_Jul14)
+%counsnrt(source1=Aug14nrtdata, source2=Aug14csl, out=nrt_cls_Aug14)
+%counsnrt(source1=Sep14nrtdata, source2=Sep14csl, out=nrt_cls_Sep14)
+%counsnrt(source1=Oct14nrtdata, source2=Oct14csl, out=nrt_cls_Oct14)
+%counsnrt(source1=Nov14nrtdata, source2=Nov14csl, out=nrt_cls_Nov14)
+%counsnrt(source1=Dec14nrtdata, source2=Dec14csl, out=nrt_cls_Dec14)
+%counsnrt(source1=Jan15nrtdata, source2=Jan15csl, out=nrt_cls_Jan15)
+%counsnrt(source1=Feb15nrtdata, source2=Feb15csl, out=nrt_cls_Feb15)
+%counsnrt(source1=Mar15nrtdata, source2=Mar15csl, out=nrt_cls_Mar15)
+%counsnrt(source1=Apr15nrtdata, source2=Apr15csl, out=nrt_cls_Apr15)
+%counsnrt(source1=May15nrtdata, source2=May15csl, out=nrt_cls_May15)
+%counsnrt(source1=Jun15nrtdata, source2=Jun15csl, out=nrt_cls_Jun15)
+%counsnrt(source1=Jul15nrtdata, source2=Jul15csl, out=nrt_cls_Jul15)
+%counsnrt(source1=Aug15nrtdata, source2=Aug15csl, out=nrt_cls_Aug15)
+%counsnrt(source1=Sep15nrtdata, source2=Sep15csl, out=nrt_cls_Sep15)
+%counsnrt(source1=Oct15nrtdata, source2=Oct15csl, out=nrt_cls_Oct15)
+%counsnrt(source1=Nov15nrtdata, source2=Nov15csl, out=nrt_cls_Nov15)
+%counsnrt(source1=Dec15nrtdata, source2=Dec15csl, out=nrt_cls_Dec15)
+%counsnrt(source1=Jan16nrtdata, source2=Jan16csl, out=nrt_cls_Jan16)
+%counsnrt(source1=Feb16nrtdata, source2=Feb16csl, out=nrt_cls_Feb16)
+%counsnrt(source1=Mar16nrtdata, source2=Mar16csl, out=nrt_cls_Mar16)
+%counsnrt(source1=Apr16nrtdata, source2=Apr16csl, out=nrt_cls_Apr16)
+%counsnrt(source1=May16nrtdata, source2=May16csl, out=nrt_cls_May16)
+%counsnrt(source1=Jun16nrtdata, source2=Jun16csl, out=nrt_cls_Jun16)
+%counsnrt(source1=Jul16nrtdata, source2=Jul16csl, out=nrt_cls_Jul16)
+%counsnrt(source1=Aug16nrtdata, source2=Aug16csl, out=nrt_cls_Aug16)
+%counsnrt(source1=Sep16nrtdata, source2=Sep16csl, out=nrt_cls_Sep16)
+%counsnrt(source1=Oct16nrtdata, source2=Oct16csl, out=nrt_cls_Oct16)
+%counsnrt(source1=Nov16nrtdata, source2=Nov16csl, out=nrt_cls_Nov16)
+%counsnrt(source1=Dec16nrtdata, source2=Dec16csl, out=nrt_cls_Dec16)
+%counsnrt(source1=Jan17nrtdata, source2=Jan17csl, out=nrt_cls_Jan17)
+%counsnrt(source1=Feb17nrtdata, source2=Feb17csl, out=nrt_cls_Feb17)
+%counsnrt(source1=Mar17nrtdata, source2=Mar17csl, out=nrt_cls_Mar17)
+%counsnrt(source1=Apr17nrtdata, source2=Apr17csl, out=nrt_cls_Apr17)
+%counsnrt(source1=May17nrtdata, source2=May17csl, out=nrt_cls_May17)
+%counsnrt(source1=Jun17nrtdata, source2=Jun17csl, out=nrt_cls_Jun17)
+%counsnrt(source1=Jul17nrtdata, source2=Jul17csl, out=nrt_cls_Jul17)
+%counsnrt(source1=Aug17nrtdata, source2=Aug17csl, out=nrt_cls_Aug17)
+%counsnrt(source1=Sep17nrtdata, source2=Sep17csl, out=nrt_cls_Sep17)
+%counsnrt(source1=Oct17nrtdata, source2=Oct17csl, out=nrt_cls_Oct17)
+%counsnrt(source1=Nov17nrtdata, source2=Nov17csl, out=nrt_cls_Nov17)
+%counsnrt(source1=Dec17nrtdata, source2=Dec17csl, out=nrt_cls_Dec17)
+%counsnrt(source1=Jan18nrtdata, source2=Jan18csl, out=nrt_cls_Jan18)
+%counsnrt(source1=Feb18nrtdata, source2=Feb18csl, out=nrt_cls_Feb18)
+%counsnrt(source1=Mar18nrtdata, source2=Mar18csl, out=nrt_cls_Mar18)
+%counsnrt(source1=Apr18nrtdata, source2=Apr18csl, out=nrt_cls_Apr18)
+%counsnrt(source1=May18nrtdata, source2=May18csl, out=nrt_cls_May18)
+%counsnrt(source1=Jun18nrtdata, source2=Jun18csl, out=nrt_cls_Jun18)
+
+
+
+%macro countnrtcsl(datasource= , period1= , period2= , agg= );
+proc sql;
+	select count(distinct(unic_member)) as &agg
+		from &datasource
+			where &period1 =1 and &period2=1;
+				quit;
+				title "Monthly NRT_Counseling Claims";
+%mend countnrtcsl;
+%countnrtcsl(datasource= nrt_cls_Jan14, period1=Jan14nrt, period2=Jan14counsel , agg=Jan14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb14, period1=Feb14nrt, period2=Feb14counsel , agg=Feb14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar14, period1=Mar14nrt, period2=Mar14counsel , agg=Mar14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr14, period1=Apr14nrt, period2=Apr14counsel , agg=Apr14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May14, period1=May14nrt, period2=May14counsel , agg=May14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun14, period1=Jun14nrt, period2=Jun14counsel , agg=Jun14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul14, period1=Jul14nrt, period2=Jul14counsel , agg=Jul14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug14, period1=Aug14nrt, period2=Aug14counsel , agg=Aug14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep14, period1=Sep14nrt, period2=Sep14counsel , agg=Sep14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct14, period1=Oct14nrt, period2=Oct14counsel , agg=Oct14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov14, period1=Nov14nrt, period2=Nov14counsel , agg=Nov14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec14, period1=Dec14nrt, period2=Dec14counsel , agg=Dec14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan15, period1=Jan15nrt, period2=Jan15counsel , agg=Jan15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb15, period1=Feb15nrt, period2=Feb15counsel , agg=Feb15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar15, period1=Mar15nrt, period2=Mar15counsel , agg=Mar15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr15, period1=Apr15nrt, period2=Apr15counsel , agg=Apr15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May15, period1=May15nrt, period2=May15counsel , agg=May15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun15, period1=Jun15nrt, period2=Jun15counsel , agg=Jun15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul15, period1=Jul15nrt, period2=Jul15counsel , agg=Jul15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug15, period1=Aug15nrt, period2=Aug15counsel , agg=Aug15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep15, period1=Sep15nrt, period2=Sep15counsel , agg=Sep15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct15, period1=Oct15nrt, period2=Oct15counsel , agg=Oct15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov15, period1=Nov15nrt, period2=Nov15counsel , agg=Nov15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec15, period1=Dec15nrt, period2=Dec15counsel , agg=Dec15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan16, period1=Jan16nrt, period2=Jan16counsel , agg=Jan16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb16, period1=Feb16nrt, period2=Feb16counsel , agg=Feb16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar16, period1=Mar16nrt, period2=Mar16counsel , agg=Mar16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr16, period1=Apr16nrt, period2=Apr16counsel , agg=Apr16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May16, period1=May16nrt, period2=May16counsel , agg=May16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun16, period1=Jun16nrt, period2=Jun16counsel , agg=Jun16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul16, period1=Jul16nrt, period2=Jul16counsel , agg=Jul16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug16, period1=Aug16nrt, period2=Aug16counsel , agg=Aug16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep16, period1=Sep16nrt, period2=Sep16counsel , agg=Sep16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct16, period1=Oct16nrt, period2=Oct16counsel , agg=Oct16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov16, period1=Nov16nrt, period2=Nov16counsel , agg=Nov16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec16, period1=Dec16nrt, period2=Dec16counsel , agg=Dec16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan17, period1=Jan17nrt, period2=Jan17counsel , agg=Jan17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb17, period1=Feb17nrt, period2=Feb17counsel , agg=Feb17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar17, period1=Mar17nrt, period2=Mar17counsel , agg=Mar17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr17, period1=Apr17nrt, period2=Apr17counsel , agg=Apr17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May17, period1=May17nrt, period2=May17counsel , agg=May17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun17, period1=Jun17nrt, period2=Jun17counsel , agg=Jun17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul17, period1=Jul17nrt, period2=Jul17counsel , agg=Jul17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug17, period1=Aug17nrt, period2=Aug17counsel , agg=Aug17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep17, period1=Sep17nrt, period2=Sep17counsel , agg=Sep17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct17, period1=Oct17nrt, period2=Oct17counsel , agg=Oct17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov17, period1=Nov17nrt, period2=Nov17counsel , agg=Nov17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec17, period1=Dec17nrt, period2=Dec17counsel , agg=Dec17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan18, period1=Jan18nrt, period2=Jan18counsel , agg=Jan18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb18, period1=Feb18nrt, period2=Feb18counsel , agg=Feb18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar18, period1=Mar18nrt, period2=Mar18counsel , agg=Mar18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr18, period1=Apr18nrt, period2=Apr18counsel , agg=Apr18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May18, period1=May18nrt, period2=May18counsel , agg=May18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun18, period1=Jun18nrt, period2=Jun18counsel , agg=Jun18nrtcsl)
+
+%macro countnrtcsl(datasource= , period1= , period2= , agg= );
+proc sql;
+	select count(distinct(unic_member)) as &agg
+		from &datasource
+			where &period1 =1 and &period2=1 and medicaidoriginal=1;
+				quit;
+				title "Monthly NRT_Counseling Claims- Trad medicaid";
+%mend countnrtcsl;
+%countnrtcsl(datasource= nrt_cls_Jan14, period1=Jan14nrt, period2=Jan14counsel , agg=Jan14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb14, period1=Feb14nrt, period2=Feb14counsel , agg=Feb14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar14, period1=Mar14nrt, period2=Mar14counsel , agg=Mar14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr14, period1=Apr14nrt, period2=Apr14counsel , agg=Apr14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May14, period1=May14nrt, period2=May14counsel , agg=May14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun14, period1=Jun14nrt, period2=Jun14counsel , agg=Jun14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul14, period1=Jul14nrt, period2=Jul14counsel , agg=Jul14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug14, period1=Aug14nrt, period2=Aug14counsel , agg=Aug14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep14, period1=Sep14nrt, period2=Sep14counsel , agg=Sep14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct14, period1=Oct14nrt, period2=Oct14counsel , agg=Oct14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov14, period1=Nov14nrt, period2=Nov14counsel , agg=Nov14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec14, period1=Dec14nrt, period2=Dec14counsel , agg=Dec14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan15, period1=Jan15nrt, period2=Jan15counsel , agg=Jan15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb15, period1=Feb15nrt, period2=Feb15counsel , agg=Feb15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar15, period1=Mar15nrt, period2=Mar15counsel , agg=Mar15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr15, period1=Apr15nrt, period2=Apr15counsel , agg=Apr15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May15, period1=May15nrt, period2=May15counsel , agg=May15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun15, period1=Jun15nrt, period2=Jun15counsel , agg=Jun15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul15, period1=Jul15nrt, period2=Jul15counsel , agg=Jul15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug15, period1=Aug15nrt, period2=Aug15counsel , agg=Aug15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep15, period1=Sep15nrt, period2=Sep15counsel , agg=Sep15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct15, period1=Oct15nrt, period2=Oct15counsel , agg=Oct15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov15, period1=Nov15nrt, period2=Nov15counsel , agg=Nov15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec15, period1=Dec15nrt, period2=Dec15counsel , agg=Dec15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan16, period1=Jan16nrt, period2=Jan16counsel , agg=Jan16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb16, period1=Feb16nrt, period2=Feb16counsel , agg=Feb16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar16, period1=Mar16nrt, period2=Mar16counsel , agg=Mar16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr16, period1=Apr16nrt, period2=Apr16counsel , agg=Apr16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May16, period1=May16nrt, period2=May16counsel , agg=May16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun16, period1=Jun16nrt, period2=Jun16counsel , agg=Jun16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul16, period1=Jul16nrt, period2=Jul16counsel , agg=Jul16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug16, period1=Aug16nrt, period2=Aug16counsel , agg=Aug16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep16, period1=Sep16nrt, period2=Sep16counsel , agg=Sep16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct16, period1=Oct16nrt, period2=Oct16counsel , agg=Oct16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov16, period1=Nov16nrt, period2=Nov16counsel , agg=Nov16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec16, period1=Dec16nrt, period2=Dec16counsel , agg=Dec16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan17, period1=Jan17nrt, period2=Jan17counsel , agg=Jan17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb17, period1=Feb17nrt, period2=Feb17counsel , agg=Feb17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar17, period1=Mar17nrt, period2=Mar17counsel , agg=Mar17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr17, period1=Apr17nrt, period2=Apr17counsel , agg=Apr17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May17, period1=May17nrt, period2=May17counsel , agg=May17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun17, period1=Jun17nrt, period2=Jun17counsel , agg=Jun17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul17, period1=Jul17nrt, period2=Jul17counsel , agg=Jul17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug17, period1=Aug17nrt, period2=Aug17counsel , agg=Aug17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep17, period1=Sep17nrt, period2=Sep17counsel , agg=Sep17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct17, period1=Oct17nrt, period2=Oct17counsel , agg=Oct17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov17, period1=Nov17nrt, period2=Nov17counsel , agg=Nov17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec17, period1=Dec17nrt, period2=Dec17counsel , agg=Dec17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan18, period1=Jan18nrt, period2=Jan18counsel , agg=Jan18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb18, period1=Feb18nrt, period2=Feb18counsel , agg=Feb18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar18, period1=Mar18nrt, period2=Mar18counsel , agg=Mar18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr18, period1=Apr18nrt, period2=Apr18counsel , agg=Apr18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May18, period1=May18nrt, period2=May18counsel , agg=May18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun18, period1=Jun18nrt, period2=Jun18counsel , agg=Jun18nrtcsl)
+
+%macro countnrtcsl(datasource= , period1= , period2= , agg= );
+proc sql;
+	select count(distinct(unic_member)) as &agg
+		from &datasource
+			where &period1 =1 and &period2=1 and medicaidexpansion=1;
+				quit;
+				title "Monthly NRT_Counseling Claims- Medicaid Expansion";
+%mend countnrtcsl;
+%countnrtcsl(datasource= nrt_cls_Jan14, period1=Jan14nrt, period2=Jan14counsel , agg=Jan14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb14, period1=Feb14nrt, period2=Feb14counsel , agg=Feb14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar14, period1=Mar14nrt, period2=Mar14counsel , agg=Mar14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr14, period1=Apr14nrt, period2=Apr14counsel , agg=Apr14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May14, period1=May14nrt, period2=May14counsel , agg=May14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun14, period1=Jun14nrt, period2=Jun14counsel , agg=Jun14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul14, period1=Jul14nrt, period2=Jul14counsel , agg=Jul14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug14, period1=Aug14nrt, period2=Aug14counsel , agg=Aug14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep14, period1=Sep14nrt, period2=Sep14counsel , agg=Sep14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct14, period1=Oct14nrt, period2=Oct14counsel , agg=Oct14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov14, period1=Nov14nrt, period2=Nov14counsel , agg=Nov14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec14, period1=Dec14nrt, period2=Dec14counsel , agg=Dec14nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan15, period1=Jan15nrt, period2=Jan15counsel , agg=Jan15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb15, period1=Feb15nrt, period2=Feb15counsel , agg=Feb15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar15, period1=Mar15nrt, period2=Mar15counsel , agg=Mar15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr15, period1=Apr15nrt, period2=Apr15counsel , agg=Apr15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May15, period1=May15nrt, period2=May15counsel , agg=May15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun15, period1=Jun15nrt, period2=Jun15counsel , agg=Jun15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul15, period1=Jul15nrt, period2=Jul15counsel , agg=Jul15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug15, period1=Aug15nrt, period2=Aug15counsel , agg=Aug15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep15, period1=Sep15nrt, period2=Sep15counsel , agg=Sep15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct15, period1=Oct15nrt, period2=Oct15counsel , agg=Oct15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov15, period1=Nov15nrt, period2=Nov15counsel , agg=Nov15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec15, period1=Dec15nrt, period2=Dec15counsel , agg=Dec15nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan16, period1=Jan16nrt, period2=Jan16counsel , agg=Jan16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb16, period1=Feb16nrt, period2=Feb16counsel , agg=Feb16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar16, period1=Mar16nrt, period2=Mar16counsel , agg=Mar16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr16, period1=Apr16nrt, period2=Apr16counsel , agg=Apr16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May16, period1=May16nrt, period2=May16counsel , agg=May16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun16, period1=Jun16nrt, period2=Jun16counsel , agg=Jun16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul16, period1=Jul16nrt, period2=Jul16counsel , agg=Jul16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug16, period1=Aug16nrt, period2=Aug16counsel , agg=Aug16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep16, period1=Sep16nrt, period2=Sep16counsel , agg=Sep16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct16, period1=Oct16nrt, period2=Oct16counsel , agg=Oct16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov16, period1=Nov16nrt, period2=Nov16counsel , agg=Nov16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec16, period1=Dec16nrt, period2=Dec16counsel , agg=Dec16nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan17, period1=Jan17nrt, period2=Jan17counsel , agg=Jan17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb17, period1=Feb17nrt, period2=Feb17counsel , agg=Feb17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar17, period1=Mar17nrt, period2=Mar17counsel , agg=Mar17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr17, period1=Apr17nrt, period2=Apr17counsel , agg=Apr17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May17, period1=May17nrt, period2=May17counsel , agg=May17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun17, period1=Jun17nrt, period2=Jun17counsel , agg=Jun17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jul17, period1=Jul17nrt, period2=Jul17counsel , agg=Jul17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Aug17, period1=Aug17nrt, period2=Aug17counsel , agg=Aug17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Sep17, period1=Sep17nrt, period2=Sep17counsel , agg=Sep17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Oct17, period1=Oct17nrt, period2=Oct17counsel , agg=Oct17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Nov17, period1=Nov17nrt, period2=Nov17counsel , agg=Nov17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Dec17, period1=Dec17nrt, period2=Dec17counsel , agg=Dec17nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jan18, period1=Jan18nrt, period2=Jan18counsel , agg=Jan18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Feb18, period1=Feb18nrt, period2=Feb18counsel , agg=Feb18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Mar18, period1=Mar18nrt, period2=Mar18counsel , agg=Mar18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Apr18, period1=Apr18nrt, period2=Apr18counsel , agg=Apr18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_May18, period1=May18nrt, period2=May18counsel , agg=May18nrtcsl)
+%countnrtcsl(datasource= nrt_cls_Jun18, period1=Jun18nrt, period2=Jun18counsel , agg=Jun18nrtcsl)
+
+
+
+/**************************************************************Demographics**********************************************************************************************/
+*******Gender and Age of Medicaid Recipient*******************;
+proc freq data=desc.mcd_elig18;
+table me013; 
+title 'Gender';
+run;
+proc means data=desc.mcd_elig18 min max mean;
+var age18;
+title 'Age Eligible Medicaid';
+run;
+
+/*Any NRT and Counseling*/
+data nrt_data (keep=me013 nrt_cat me107 me001 p_age18 medicaidoriginal medicaidexpansion);
+set Jun18nrtdata;
+run;
+data csl_data (keep= me013 csl_cat me107 me001 m_age18 medicaidoriginal medicaidexpansion);
+set Jun18csl;
+run;
+
+proc sort data=nrt_data; by me107 me001; run;
+proc sort data=csl_data; by me107 me001; run;
+
+data nrt_csl_merged;
+merge nrt_data (in=n) csl_data(in=c);
+by me107 me001;
+run;
+
+proc freq data=nrt_csl_merged;
+table me013;
+title 'NRT_VSL by Gender';
+run;
+
+proc freq data=nrt_csl_merged;
+table me013;
+where medicaidoriginal=1;
+title 'NRT_VSL by Gender- Trad. Medicaid';
+run;
+
+proc freq data=nrt_csl_merged;
+table me013;
+where medicaidexpansion=1;
+title 'NRT_VSL by Gender- Medicaid Expansion';
+run;
+
+/*Age*/
+proc means data=nrt_csl_merged min max mean;
+var p_age18;
+title 'Age All Medicaid';
+run;
+
+proc means data=nrt_csl_merged min max mean;
+var p_age18;
+where medicaidoriginal=1;
+title 'Age Trad. Medicaid';
+run;
+proc means data=nrt_csl_merged min max mean;
+var p_age18;
+where medicaidexpansion=1;
+title 'Age Medicaid Expansion';
+run;
+
+/*Outer Join*/
+proc sql;
+create table nrt_csl as 
+select*
+from nrt_data as x join csl_data as y
+on x.me107=y.me107 and x.me001=y.me001;
+quit;
+
+
+
+proc freq data=nrt_csl;
+table me013;
+title '';
+run;
+
+/*************************************************************END******************************************************************************************************************/
+
+
+
+
+
+
+
+
+
+
+
